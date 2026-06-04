@@ -2,7 +2,7 @@
 title: "Measurement Error in Causal Inference"
 author: "Bielicke, L. and Xochihua-Tlecuitl, T."
 date: today
-jupyter: measurement-err
+jupyter: python3
 format:
   html:
     toc: true
