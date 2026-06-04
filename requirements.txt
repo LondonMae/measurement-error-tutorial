@@ -4,4 +4,6 @@ matplotlib
 statsmodels
 plotly
 ipykernel
+nbformat
 pyyaml
+nbclient
