@@ -5,6 +5,7 @@ date: today
 jupyter: python3
 format:
   html:
+    output-file: index.html
     toc: true
     toc-depth: 3
     toc-title: "Contents"
