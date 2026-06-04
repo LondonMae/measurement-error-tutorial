@@ -1,0 +1,577 @@
+---
+title: "Measurement Error in Causal Inference"
+author: "Bielicke, L. and Xochihua-Tlecuitl, T."
+date: today
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    toc-title: "Contents"
+    theme: cosmo
+    code-fold: true
+    code-tools: true
+    self-contained: true
+    html-math-method: mathjax
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{python}
+import numpy as np
+import plotly.graph_objects as go
+import plotly.io as pio
+
+pio.renderers.default = "plotly_mimetype"
+rng = np.random.default_rng(42)
+```
+
+---
+
+## 1. Measurement Error: Definitions & Types
+
+In causal inference we assume that the variables we reason about are the variables
+we observe. In practice this assumption is often violated. We observe a *proxy* —
+a noisy or imperfect stand-in for the true variable of interest. **Measurement
+error** is the misalignment between the true state of a variable and its reported
+state.
+
+This matters because the variable we draw conclusions *with* is not always the
+variable we draw conclusions *about*. Before reasoning about confounding or
+external validity, researchers must ask whether their variables were measured
+accurately in the first place.
+
+### 1.1 Classical Measurement Error
+
+The most common formalization treats the observed variable as the true value plus
+independent noise:
+
+$$X^* = X + \varepsilon$$
+
+The error term $\varepsilon$ satisfies four key assumptions:
+
+- $\mathbb{E}(\varepsilon) = 0$ — zero mean
+- $\varepsilon \perp X$ — independent of the true value
+- $\varepsilon \perp Y$ — independent of the outcome
+- $\varepsilon \perp Z$ — independent of any covariate
+
+These conditions ensure the noise is purely random. Blood pressure recorded at a
+single clinic visit, self-reported hours worked, or a single-item well-being
+survey all exhibit approximately classical error.
+
+### 1.2 Systematic Measurement Error
+
+When $\mathbb{E}(\varepsilon) \neq 0$, the error is **systematic**: estimates
+are shifted uniformly in one direction and do not improve with larger samples.
+A miscalibrated scale, a survey item that prompts social-desirability responding,
+or a happiness measure built for one cultural context but applied in another all
+introduce systematic bias.
+
+### 1.3 Differential Measurement Error
+
+The most consequential case arises when the measurement error is correlated with
+the outcome or a confounder. In the potential-outcomes framework this means:
+
+$$U_{X^*} \not\perp Y$$
+
+In DAG terms, the observed proxy $X^*$ becomes a **collider** on a path between
+the true treatment $X$ and the outcome $Y$. Conditioning on $X^*$ — as OLS
+implicitly does — opens a spurious backdoor path even if the unobserved $X$ would
+have satisfied the identification conditions. In psychometrics this phenomenon is
+called **Differential Item Functioning (DIF)**: an item behaves differently across
+groups not because the latent trait differs, but because the measurement process
+itself does.
+
+### 1.4 Motivating Example: Subjective Well-Being
+
+Consider estimating the effect of happiness on physical activity. Happiness
+cannot be observed directly. A single survey item (e.g., "Overall, how satisfied
+are you with your life?") correlates with true happiness at roughly $r = 0.5$;
+a validated multi-item scale reaches about $r = 0.8$. Neither is perfect. The
+question is not whether measurement error exists but how much it distorts the
+causal estimate — and whether anything can be done about it.
+
+---
+
+## 2. Causal Estimand, Identification & Attenuation Bias
+
+### 2.1 Causal Setup & Identification
+
+Let $Y(x)$ denote the potential outcome under treatment $X = x$. The **Average
+Treatment Effect** is:
+
+$$\tau = \mathbb{E}[Y(1) - Y(0)]$$
+
+Identification via OLS requires unconfoundedness ($Y(x) \perp X \mid Z$), overlap,
+and SUTVA. Measurement error can violate each of these. The sections below trace
+the consequences for treatment ($X$), outcome ($Y$), and conditioning variable
+($Z$) separately.
+
+### 2.2 ME in Treatment: Attenuation Bias
+
+Suppose the true data-generating process is $Y = \beta X + \varepsilon$, but we
+observe only $X^* = X + U$ where $U \perp X, \varepsilon$. Plugging the proxy
+into OLS gives:
+
+$$\hat{\beta}_{OLS} = \frac{\text{Cov}(Y,\, X^*)}{\text{Var}(X^*)}
+= \frac{\text{Cov}(\beta X + \varepsilon,\; X + U)}{\text{Var}(X) + \text{Var}(U)}
+= \frac{\beta\,\text{Var}(X)}{\text{Var}(X) + \text{Var}(U)}
+= \beta\lambda$$
+
+where the **reliability ratio** $\lambda = \text{Var}(X)\,/\,[\text{Var}(X) +
+\text{Var}(U)] \in (0, 1)$ is the fraction of the proxy's variance attributable
+to the true signal. Because $\lambda < 1$, the OLS estimate is biased toward
+zero — *attenuated*. With $\lambda = 0.5$ a true effect of $\beta = 0.6$ appears
+as $\hat\beta \approx 0.3$.
+
+The chart below shows this directly. Drag the slider to reduce reliability and
+watch the fitted slope shrink toward zero even as the true relationship stays fixed.
+
+```{python}
+#| label: fig-attenuation
+#| fig-cap: "Attenuation bias as reliability decreases. The green line is the true slope; the red dashed line is what OLS recovers from the noisy proxy."
+
+n = 500
+beta_true = 0.6
+lambdas = np.round(np.arange(0.10, 1.01, 0.05), 2)
+xline = np.linspace(-3.5, 3.5, 120)
+
+frames, steps = [], []
+for lam in lambdas:
+    var_u = (1 - lam) / lam
+    X_true = rng.normal(0, 1, n)
+    U      = rng.normal(0, np.sqrt(var_u), n)
+    X_obs  = X_true + U
+    Y      = beta_true * X_true + rng.normal(0, 1, n)
+    b_hat  = np.cov(Y, X_obs)[0, 1] / np.var(X_obs)
+    b_th   = beta_true * lam
+
+    frames.append(go.Frame(
+        name=str(lam),
+        data=[
+            go.Scatter(x=X_obs, y=Y, mode="markers",
+                       marker=dict(size=3, color="steelblue", opacity=0.25),
+                       showlegend=False),
+            go.Scatter(x=xline, y=beta_true * xline, mode="lines",
+                       name=f"True β = {beta_true}",
+                       line=dict(color="green", width=2.5)),
+            go.Scatter(x=xline, y=b_hat * xline, mode="lines",
+                       name=f"OLS β̂ = {b_hat:.3f}",
+                       line=dict(color="crimson", width=2.5, dash="dash")),
+            go.Scatter(x=xline, y=b_th * xline, mode="lines",
+                       name=f"Theory βλ = {b_th:.3f}",
+                       line=dict(color="darkorange", width=1.5, dash="dot")),
+        ]
+    ))
+    steps.append(dict(
+        method="animate",
+        label=str(lam),
+        args=[[str(lam)], dict(mode="immediate",
+                               frame=dict(duration=0, redraw=True),
+                               transition=dict(duration=0))]
+    ))
+
+# start at λ=1.0 (last frame)
+init = frames[-1].data
+fig_att = go.Figure(data=init, frames=frames)
+fig_att.update_layout(
+    xaxis=dict(title="Observed X*", range=[-4, 4]),
+    yaxis=dict(title="Y", range=[-4, 4]),
+    legend=dict(x=0.02, y=0.98, bgcolor="rgba(255,255,255,0.7)"),
+    margin=dict(t=40, b=80),
+    sliders=[dict(
+        active=len(lambdas) - 1,
+        currentvalue=dict(prefix="Reliability λ = ", visible=True, xanchor="center"),
+        pad=dict(b=10, t=40),
+        steps=steps
+    )],
+    height=440,
+)
+fig_att.show()
+```
+
+### 2.3 ME in Outcome Variables
+
+Now suppose $Y^* = Y + U_Y$ where $U_Y \perp X$. Substituting into the regression:
+
+$$Y^* = \beta X + (\varepsilon + U_Y)$$
+
+The measurement noise is absorbed into the composite residual. Since $U_Y \perp X$
+by assumption, $\beta$ remains **unbiased** — but residual variance rises, standard
+errors inflate, and statistical power falls. Attenuation is a treatment-measurement
+problem; outcome noise is a precision problem.
+
+```{python}
+#| label: fig-outcome-me
+#| fig-cap: "ME in the outcome does not bias the slope but inflates the scatter around it."
+
+n = 500
+beta_true = 0.6
+reliabilities_y = np.round(np.arange(0.10, 1.01, 0.05), 2)
+X = rng.normal(0, 1, n)
+eps = rng.normal(0, 1, n)
+Y_true = beta_true * X + eps
+
+frames_y, steps_y = [], []
+for lam in reliabilities_y:
+    var_uy = (1 - lam) / lam
+    Y_obs  = Y_true + rng.normal(0, np.sqrt(var_uy), n)
+    b_hat  = np.cov(Y_obs, X)[0, 1] / np.var(X)
+    xline2 = np.linspace(-3.5, 3.5, 120)
+
+    frames_y.append(go.Frame(
+        name=str(lam),
+        data=[
+            go.Scatter(x=X, y=Y_obs, mode="markers",
+                       marker=dict(size=3, color="steelblue", opacity=0.25),
+                       showlegend=False),
+            go.Scatter(x=xline2, y=beta_true * xline2, mode="lines",
+                       name=f"True β = {beta_true}",
+                       line=dict(color="green", width=2.5)),
+            go.Scatter(x=xline2, y=b_hat * xline2, mode="lines",
+                       name=f"OLS β̂ = {b_hat:.3f}",
+                       line=dict(color="crimson", width=2.5, dash="dash")),
+        ]
+    ))
+    steps_y.append(dict(
+        method="animate", label=str(lam),
+        args=[[str(lam)], dict(mode="immediate",
+                               frame=dict(duration=0, redraw=True),
+                               transition=dict(duration=0))]
+    ))
+
+fig_y = go.Figure(data=frames_y[-1].data, frames=frames_y)
+fig_y.update_layout(
+    xaxis=dict(title="X", range=[-4, 4]),
+    yaxis=dict(title="Observed Y*", range=[-5, 5]),
+    legend=dict(x=0.02, y=0.98, bgcolor="rgba(255,255,255,0.7)"),
+    margin=dict(t=40, b=80),
+    sliders=[dict(
+        active=len(reliabilities_y) - 1,
+        currentvalue=dict(prefix="Outcome reliability = ", visible=True, xanchor="center"),
+        pad=dict(b=10, t=40),
+        steps=steps_y
+    )],
+    height=440,
+)
+fig_y.show()
+```
+
+---
+
+## 3. ME in Conditioning Variables
+
+The treatment-error story has a parallel for confounders. Suppose $Z$ confounds
+the effect of $X$ on $Y$, but we observe only the noisy proxy $Z^* = Z + U_{Z^*}$.
+Controlling for $Z^*$ closes the backdoor path only partially: the residual
+correlation between $X$ and $Y$ through the uncontrolled part of $Z$ remains.
+
+Unlike attenuation bias, the direction of the resulting confounding is not
+guaranteed. It depends on the signs and magnitudes of the paths $Z \to X$,
+$Z \to Y$, and the reliability $\lambda_{Z^*}$. In general:
+
+$$\hat\beta_{OLS} - \beta \;\propto\; \frac{(1-\lambda_{Z^*})\,\gamma_1 \gamma_2}
+{\text{Var}(X^*)(1 - \rho^2_{XZ^*})}$$
+
+where $\gamma_1$ and $\gamma_2$ are the paths from $Z$ to $X$ and $Z$ to $Y$
+respectively. The bias can be positive or negative, and does not vanish as
+$n \to \infty$.
+
+*[Add worked example here]*
+
+---
+
+## 4. Instrumental Variables & 2SLS
+
+### 4.1 The IV Idea
+
+To recover $\beta$ consistently despite noisy $X^*$, we need a second proxy $T$
+for $X$ whose measurement error $U_T$ is independent of $U_{X^*}$. The IV estimator
+exploits the covariance between $Y$ and $T$ after projecting out noise:
+
+$$\hat\beta_{IV} = \frac{\text{Cov}(Y, T)}{\text{Cov}(X^*, T)}
+= \frac{\beta\,\text{Cov}(X, T)}{\text{Cov}(X, T)} = \beta$$
+
+The two assumptions $T \perp Y \mid X$ (exclusion restriction) and
+$U_T \perp U_{X^*}$ (independent measurement errors) jointly ensure consistency.
+
+### 4.2 Two-Stage Least Squares
+
+In practice the estimator is implemented as 2SLS. Let $Z$ be a valid instrument.
+
+**Stage 1** — regress $X^*$ on $Z$:
+
+$$\hat X^* = \hat\pi_0 + \hat\pi_1 Z$$
+
+**Stage 2** — regress $Y$ on $\hat X^*$:
+
+$$Y = \alpha + \beta\,\hat X^* + \eta$$
+
+The fitted values $\hat X^*$ retain only the variation in $X^*$ attributable to
+the exogenous instrument. Because $Z$ is uncorrelated with $U$ and $\varepsilon$
+by assumption, $\hat X^*$ is uncorrelated with the stage-2 residual — the
+d-separation that makes $\hat\beta_{2SLS}$ consistent.
+
+```{python}
+#| label: fig-iv
+#| fig-cap: "OLS attenuates; 2SLS recovers the true effect. Drag the slider to see how each estimator responds to reliability."
+
+import statsmodels.api as sm
+
+n = 1000
+beta_true = 0.6
+reliabilities_iv = np.round(np.arange(0.10, 1.01, 0.05), 2)
+
+results_ols, results_2sls, results_th = [], [], []
+for lam in reliabilities_iv:
+    var_u   = (1 - lam) / lam
+    X_true  = rng.normal(0, 1, n)
+    U       = rng.normal(0, np.sqrt(var_u), n)
+    X_obs   = X_true + U
+    Z       = X_true + rng.normal(0, 0.5, n)
+    Y       = beta_true * X_true + rng.normal(0, 1, n)
+
+    b_ols  = np.cov(Y, X_obs)[0, 1] / np.var(X_obs)
+    stage1 = sm.OLS(X_obs, sm.add_constant(Z)).fit()
+    stage2 = sm.OLS(Y,     sm.add_constant(stage1.fittedvalues)).fit()
+    b_2sls = stage2.params[1]
+
+    results_ols.append(b_ols)
+    results_2sls.append(b_2sls)
+    results_th.append(beta_true * lam)
+
+fig_iv = go.Figure()
+fig_iv.add_trace(go.Scatter(
+    x=reliabilities_iv, y=results_ols, mode="lines+markers",
+    name="OLS (biased)", line=dict(color="crimson", width=2, dash="dash"),
+    marker=dict(size=5)
+))
+fig_iv.add_trace(go.Scatter(
+    x=reliabilities_iv, y=results_2sls, mode="lines+markers",
+    name="2SLS (corrected)", line=dict(color="steelblue", width=2),
+    marker=dict(size=5)
+))
+fig_iv.add_trace(go.Scatter(
+    x=reliabilities_iv, y=[beta_true] * len(reliabilities_iv), mode="lines",
+    name=f"True β = {beta_true}", line=dict(color="green", width=2)
+))
+fig_iv.add_trace(go.Scatter(
+    x=reliabilities_iv, y=results_th, mode="lines",
+    name="Theory OLS = βλ", line=dict(color="darkorange", width=1.5, dash="dot")
+))
+fig_iv.update_layout(
+    xaxis=dict(title="Reliability (λ)", range=[0.05, 1.05]),
+    yaxis=dict(title="Estimated β", range=[0, 0.85]),
+    legend=dict(x=0.55, y=0.15, bgcolor="rgba(255,255,255,0.7)"),
+    margin=dict(t=40, b=40),
+    height=380,
+)
+fig_iv.show()
+```
+
+---
+
+## 5. Latent Variable Methods: SEM, Scoring & IRT
+
+### 5.1 Structural Equation Modeling
+
+Adding covariates to an OLS regression cannot fix attenuation bias: the
+contaminated variance of $X^*$ is the root cause, not omitted confounders.
+Two principled alternatives exist.
+
+The first is IV (Section 4). The second is **Structural Equation Modeling (SEM)**,
+which makes the measurement model explicit. The SEM consists of a *measurement
+equation*,
+
+$$\mathbf{y}^* = \mathbf{\Lambda} f + \boldsymbol\varepsilon$$
+
+and a *structural equation*,
+
+$$\mathbf{y}^* = \mathbf{B}\mathbf{y}^* + \mathbf{\Gamma} x + \boldsymbol\zeta$$
+
+The item-specific noise $\boldsymbol\varepsilon$ is separated from the structural
+disturbance $\boldsymbol\zeta$. This d-separation is what restores unbiased
+estimation of the structural path.
+
+### 5.2 Scoring Methods
+
+How we collapse multiple items into a single latent-variable score determines
+how measurement error enters the causal model:
+
+| Method | Assumption | Consequence |
+|---|---|---|
+| **Sum score** | $\lambda = 1$ | Retains all ME; guarantees attenuation bias |
+| **Regression factor score** | Partial reliability | Shrinks toward the population mean; biases standard errors |
+| **Multiple imputation** | Draws from posterior | Preserves true variance; ME reflected accurately via Rubin's Rules |
+
+### 5.3 Item Response Theory
+
+When the proxy is binary — e.g., a Yes/No survey item — the classical additive
+error model does not apply. **Item Response Theory (IRT)** instead models the
+probability of a positive response as a function of the true latent trait $\theta$.
+Under the two-parameter logistic (2PL) model:
+
+$$P(X^* = 1 \mid \theta) = \frac{1}{1 + e^{-a(\theta - b)}}$$
+
+The **discrimination** parameter $a$ controls how steeply the response probability
+rises with the trait; the **threshold** $b$ is the trait level at which the
+probability equals one-half.
+
+```{python}
+#| label: fig-icc
+#| fig-cap: "Item Characteristic Curve (2PL IRT). Drag the sliders to see how discrimination and threshold shape the response function."
+
+theta = np.linspace(-4, 4, 300)
+
+# Build a grid of (a, b) combinations and use Plotly sliders
+a_vals = np.round(np.arange(0.5, 4.1, 0.5), 1)
+b_vals = np.round(np.arange(-2.0, 2.1, 0.5), 1)
+
+# One trace per (a, b) pair; toggle visibility via slider
+traces = []
+for a in a_vals:
+    for b in b_vals:
+        p = 1 / (1 + np.exp(-a * (theta - b)))
+        traces.append(go.Scatter(
+            x=theta, y=p, mode="lines",
+            line=dict(color="steelblue", width=2.5),
+            visible=False,
+            showlegend=False,
+            name=f"a={a}, b={b}"
+        ))
+
+# Reference lines (always visible)
+traces.append(go.Scatter(
+    x=theta, y=[0.5] * len(theta), mode="lines",
+    line=dict(color="gray", width=1, dash="dash"),
+    showlegend=False, visible=True
+))
+n_ref = 1
+
+n_ab = len(a_vals) * len(b_vals)
+default_a_idx = list(a_vals).index(1.0)
+default_b_idx = list(b_vals).index(0.0)
+default_trace = default_a_idx * len(b_vals) + default_b_idx
+traces[default_trace].visible = True
+
+# Sliders for a and b
+steps_a = []
+for i, a in enumerate(a_vals):
+    vis = [False] * n_ab + [True] * n_ref
+    for j in range(len(b_vals)):
+        vis[i * len(b_vals) + j] = True  # show all b for this a? No — just current b
+    # Actually show only the current (a, current_b) pair
+    vis2 = [False] * n_ab + [True] * n_ref
+    for j in range(len(b_vals)):
+        vis2[i * len(b_vals) + j] = True  # all b for this a visible for now
+    steps_a.append(dict(method="update", label=str(a),
+                        args=[{"visible": vis2}]))
+
+# Use b slider to further filter (simpler: just one combined slider over all (a,b) pairs)
+all_steps = []
+for a in a_vals:
+    for b in b_vals:
+        idx = list(a_vals).index(a) * len(b_vals) + list(b_vals).index(b)
+        vis = [False] * n_ab + [True] * n_ref
+        vis[idx] = True
+        all_steps.append(dict(method="update",
+                              label=f"a={a} b={b}",
+                              args=[{"visible": vis}]))
+
+# Two separate sliders: one for a, one for b
+# With Plotly's static sliders, two independent sliders controlling the same
+# set of traces requires Restyle. Use a single combined approach instead:
+# Show one trace per (a, b) pair; provide a slider for b at default a=1.0
+# and a dropdown for a.
+
+default_a = 1.0
+default_a_idx = list(a_vals).index(default_a)
+
+steps_b = []
+for j, b in enumerate(b_vals):
+    idx = default_a_idx * len(b_vals) + j
+    vis = [False] * n_ab + [True] * n_ref
+    vis[idx] = True
+    steps_b.append(dict(method="update", label=str(b),
+                        args=[{"visible": vis},
+                              {"title": f"ICC — discrimination a = {default_a}, threshold b = {b}"}]))
+
+buttons_a = []
+for i, a in enumerate(a_vals):
+    # when a changes, show trace for (a, current b=0.0 default)
+    b_default_idx = list(b_vals).index(0.0)
+    idx = i * len(b_vals) + b_default_idx
+    vis = [False] * n_ab + [True] * n_ref
+    vis[idx] = True
+    buttons_a.append(dict(method="update", label=str(a),
+                          args=[{"visible": vis},
+                                {"title": f"ICC — discrimination a = {a}, threshold b = 0.0"}]))
+
+fig_icc = go.Figure(data=traces)
+fig_icc.update_layout(
+    title=f"ICC — discrimination a = {default_a}, threshold b = 0.0",
+    xaxis=dict(title="True Trait (θ)", range=[-4, 4]),
+    yaxis=dict(title="P(X* = 1)", range=[0, 1]),
+    margin=dict(t=60, b=100),
+    height=420,
+    sliders=[dict(
+        active=list(b_vals).index(0.0),
+        currentvalue=dict(prefix="Threshold b = ", visible=True, xanchor="center"),
+        pad=dict(b=10, t=40),
+        steps=steps_b
+    )],
+    updatemenus=[dict(
+        type="dropdown", direction="left",
+        x=0.0, y=1.12, xanchor="left",
+        buttons=buttons_a,
+        showactive=True,
+        pad=dict(r=10),
+    )]
+)
+fig_icc.show()
+```
+
+---
+
+## 6. Measurement Invariance
+
+A causal estimate $\beta$ is only interpretable if the measurement model operates
+identically across all values of the treatment and covariates. **Measurement
+invariance** formalizes this condition.
+
+Three levels are typically tested in a confirmatory factor analysis framework:
+
+- **Configural invariance** — the same latent factor structure holds across groups.
+- **Metric invariance** — factor loadings are equal across groups; a one-unit change
+  in the latent trait means the same thing everywhere.
+- **Scalar invariance** — item intercepts are equal across groups; latent means can
+  be meaningfully compared.
+
+In causal terms, scalar invariance is what we need to compare treated and control
+units on a latent outcome. Its failure is equivalent to the existence of a
+treatment-induced DIF: the treatment $X$ directly alters an item's difficulty or
+discrimination independently of the true trait. In DAG notation this opens a new,
+unblocked backdoor path from $X$ to $Y^*$ that does not pass through $Y$ — a
+form of differential measurement error that OLS, IV, and SEM all fail to correct
+unless the non-invariance is modeled explicitly.
+
+*[Add worked example here]*
+
+---
+
+## 7. Takeaways
+
+- Measurement error is not a nuisance to note in a limitations section; it is a
+  structural feature of the data-generating process with identifiable causal
+  consequences.
+- Classical error in the *treatment* attenuates coefficients toward zero by the
+  reliability ratio $\lambda$. Classical error in the *outcome* inflates standard
+  errors but leaves point estimates unbiased.
+- Error in a *conditioning variable* leaves an open backdoor path and can bias
+  estimates in either direction.
+- Instrumental variables and SEM each offer consistent estimation under different
+  assumptions. The choice depends on whether a valid second proxy or a full
+  measurement model is available.
+- Before worrying about confounding or external validity, ask whether the measures
+  themselves are valid proxies for the constructs of interest.

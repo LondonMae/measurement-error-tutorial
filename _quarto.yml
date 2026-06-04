@@ -1,0 +1,23 @@
+project:
+  type: website
+  output-dir: _site
+
+website:
+  title: "Measurement Error in Causal Inference"
+
+format:
+  html:
+    theme: cosmo
+    toc: true
+    toc-depth: 3
+    toc-title: "Contents"
+    code-fold: true
+    code-tools: true
+    self-contained: false
+    html-math-method: mathjax
+
+execute:
+  echo: false
+  warning: false
+  message: false
+  freeze: auto
