@@ -3,6 +3,8 @@ title: "Measurement Error in Causal Inference"
 author: "Bielicke, L. and Xochihua-Tlecuitl, T."
 date: today
 jupyter: python3
+filters:
+  - live
 format:
   html:
     toc: true
@@ -10,7 +12,7 @@ format:
     toc-title: "Contents"
     theme: cosmo
     code-fold: true
-    code-tools: true
+    code-tools: false
     self-contained: true
     html-math-method: mathjax
 execute:
@@ -30,38 +32,51 @@ def show(fig):
 rng = np.random.default_rng(42)
 ```
 
+::: {.callout-note icon=false}
+## Key Ideas
+
+By the end of this tutorial you should be able to:
+
+1. Define *classical* measurement error 
+2. Describe how classical measurement error influences treatment, conditioning,
+and outcome variables differently
+4. Apply instrumental variables and 2SLS to correct for measurement bias
+5. TODO
+6. TODO
+:::
+
 ---
 
 ## 1. Measurement Error: Definitions & Types
 **Measurement
 error** is the misalignment between the true state of a variable and its reported
-state. In causal inference we assume that the variables we reason about are the variables
-we observe. In practice this assumption is often violated. We observe a *proxy*
-i.e.,
-a noisy or imperfect stand-in for the true variable of interest. 
+state. We often assume that the variables we reason about are the variables
+we observe. This assumption rarely holds in practive. Instead, we observe some
+*proxy variable*
+i.e., a noisy or imperfect stand-in for the true variable of interest. 
 
-Measurement error matters because the variable we draw conclusions *with* is not always the
-variable we draw conclusions *about*. Before reasoning about confounding or
-external validity, researchers must ask whether their variables were measured
-accurately in the first place.
+Understanding measurement error is important because the variable we draw
+conclusions *with* is not always the variable we draw conclusions *about*.
+To identify unbiased causal estimates, we need to understadn the relationship
+between the variable of interest and the noisy proxy. 
+
 
 ### 1.1 Classical Measurement Error
-
-The most common formalization treats the observed variable as the true value plus
-independent noise:
+Classical measurement error occurs when the observed variable equals the the true value **plus**
+some noise:
 
 $$X^* = X + \varepsilon$$
 
-The error term $\varepsilon$ satisfies four key assumptions:
+where the error term $\varepsilon$ satisfies four key assumptions:
 
-- $\mathbb{E}(\varepsilon) = 0$ — zero mean
-- $\varepsilon \perp X$ — independent of the true value
-- $\varepsilon \perp Y$ — independent of the outcome
-- $\varepsilon \perp Z$ — independent of any covariate
+- $\mathbb{E}(\varepsilon) = 0$ (zero mean)
+- $\varepsilon \perp X$ (independent of the true value)
+- $\varepsilon \perp Y$ (independent of the outcome)
+- $\varepsilon \perp Z$ (independent of any covariate)
 
-These conditions ensure the noise is purely random. Blood pressure recorded at a
-single clinic visit, self-reported hours worked, or a single-item well-being
-survey all exhibit approximately classical error.
+## Question
+What does the first assumption imply about the relationship between
+$\mathbb{E}(\varepsilon \mid X)$ and $\mathbb{E}(\varepsilon \mid X^*)$?
 
 ```{dot}
 //| label: fig-dag-basic
@@ -80,91 +95,76 @@ digraph {
 }
 ```
 
-### 1.2 Systematic Measurement Error
+There are other types of measurmeemnt error (e.g., differential). We will focus
+on classicial measurment error throughout this tutorial. 
 
-When $\mathbb{E}(\varepsilon) \neq 0$, the error is **systematic**: estimates
-are shifted uniformly in one direction and do not improve with larger samples.
-A miscalibrated scale, a survey item that prompts social-desirability responding,
-or a happiness measure built for one cultural context but applied in another all
-introduce systematic bias.
+### 2 Motivating Example: Subjective Well-Being
 
-### 1.3 Differential Measurement Error
+Researchers are studying the effect of happiness on physical activity. Because
+they cannot measure partipants' happiness directly, they use a self-reported to
+determine happiness. The researchers believe that the self-reports, though not a
+perfect representation of happiness, correlate with partipants true happiness
+levels. 
 
-The most consequential case arises when the measurement error is correlated with
-the outcome or a confounder. In the potential-outcomes framework this means:
+## Note 
+Prior work shows that single scale surveys correlate with true metrics
+at roughly $r = 0.5$, while multi-item scales reaches about $r = 0.8$. Neither
+is perfect. 
 
-$$U_{X^*} \not\perp Y$$
+## Other Examples of Measurement Error
 
-In DAG terms, the observed proxy $X^*$ becomes a **collider** on a path between
-the true treatment $X$ and the outcome $Y$. Conditioning on $X^*$ — as OLS
-implicitly does — opens a spurious backdoor path even if the unobserved $X$ would
-have satisfied the identification conditions. In psychometrics this phenomenon is
-called **Differential Item Functioning (DIF)**: an item behaves differently across
-groups not because the latent trait differs, but because the measurement process
-itself does.
-
-```{dot}
-//| label: fig-dag-differential
-//| fig-cap: "Differential ME: the error U_X is correlated with the outcome Y, making X* a collider. Conditioning on X* opens a spurious path from X to Y."
-//| fig-height: 1.6
-digraph {
-  rankdir=LR
-  node [fontname="Helvetica" fontsize=13]
-  X   [shape=circle style=dashed label="X (latent)"]
-  Xs  [shape=square  label="X* (proxy)"]
-  Y   [shape=square]
-  UX  [shape=circle  style=dashed label="U_X"]
-  X  -> Xs
-  X  -> Y
-  UX -> Xs
-  UX -> Y
-}
-```
-
-### 1.4 Motivating Example: Subjective Well-Being
-
-Consider estimating the effect of happiness on physical activity. Happiness
-cannot be observed directly. A single survey item (e.g., "Overall, how satisfied
-are you with your life?") correlates with true happiness at roughly $r = 0.5$;
-a validated multi-item scale reaches about $r = 0.8$. Neither is perfect. The
-question is not whether measurement error exists but how much it distorts the
-causal estimate — and whether anything can be done about it.
+- Blood pressure recorded at a single clinic visit
+- Self-reported hours worked
+- Human error when reading time from a clock
+- Mechanical error from scales
 
 ---
 
-## 2. Causal Estimand, Identification & Attenuation Bias
+## 3. Causal Estimand, Identification & Attenuation Bias
 
-### 2.1 Causal Setup & Identification
+### 3.1 Causal Setup & Identification
 
-Let $Y(x)$ denote the potential outcome under treatment $X = x$. The **Average
-Treatment Effect** is:
+Throughout the tutorial, we are interested in measuring the average treatment
+effect (ATE) of $X$ on $Y$. Most of our results assume a linear regression
+model. Below, we explain how measurement error in treatment, conditioning, and
+outcome variables can influence findings.
 
-$$\tau = \mathbb{E}[Y(1) - Y(0)]$$
-
-Identification via OLS requires unconfoundedness ($Y(x) \perp X \mid Z$), overlap,
-and SUTVA. Measurement error can violate each of these. The sections below trace
-the consequences for treatment ($X$), outcome ($Y$), and conditioning variable
-($Z$) separately.
-
-### 2.2 ME in Treatment: Attenuation Bias
-
-Suppose the true data-generating process is $Y = \beta X + \varepsilon$, but we
-observe only $X^* = X + U$ where $U \perp X, \varepsilon$. Plugging the proxy
+### 3.2 Classical ME in Treatment: Attenuation Bias
+We want to determine $\beta$ in $Y = \beta X + \varepsilon$, but we
+observe only $X^* = X + U$. Plugging the proxy
 into OLS gives:
 
-$$\hat{\beta}_{OLS} = \frac{\text{Cov}(Y,\, X^*)}{\text{Var}(X^*)}
+$$\hat{\beta} = \frac{\text{Cov}(Y,\, X^*)}{\text{Var}(X^*)}
 = \frac{\text{Cov}(\beta X + \varepsilon,\; X + U)}{\text{Var}(X) + \text{Var}(U)}
 = \frac{\beta\,\text{Var}(X)}{\text{Var}(X) + \text{Var}(U)}
 = \beta\lambda$$
 
-where the **reliability ratio** $\lambda = \text{Var}(X)\,/\,[\text{Var}(X) +
-\text{Var}(U)] \in (0, 1)$ is the fraction of the proxy's variance attributable
-to the true signal. Because $\lambda < 1$, the OLS estimate is biased toward
-zero — *attenuated*. With $\lambda = 0.5$ a true effect of $\beta = 0.6$ appears
-as $\hat\beta \approx 0.3$.
+where $\lambda = \frac{\text{Var}(X)}{\text{Var}(X) +
+\text{Var}(U)}$ is the **reliability ratio**. In the derivation above, we leverage the classical measurement error assumptions
+that $\text{Cov}(X, U) = 0$ and $\text{Cov}(\varepsilon, U) = 0$.
 
-The chart below shows this directly. Drag the slider to reduce reliability and
-watch the fitted slope shrink toward zero even as the true relationship stays fixed.
+::: {.callout-note collapse="true"}
+## In which direction is $\hat{\beta}$ biased when there is classical measurement error in $X$?
+
+Because $\lambda < 1$, the OLS estimate attenuates toward zero. With $\lambda =
+0.5$, a true effect of $\beta = 0.6$ appears as $\hat{\beta} \approx 0.3$.
+
+:::
+
+::: {.callout-tip}
+## Attenuation Bias
+
+Attenuation bias occurs when a regressor's estimated coefficient is biased
+toward zero.
+
+:::
+
+Explore the chart below to see how the reliability ratio affects our causal
+estimate. Notice that when the reliability ratio gets smaller, the fitted slope
+shrinks toward zero even as the true relationship stays fixed. In other words,
+the causal estimate *attenuates*.
+
+
 
 ```{python}
 #| label: fig-attenuation
@@ -229,160 +229,436 @@ fig_att.update_layout(
 show(fig_att)
 ```
 
-### 2.3 ME in Outcome Variables
+### 3.3 ME in Outcome Variables
+We *still* want to determine $\beta$ in $Y = \beta X + \varepsilon$. This time, we
+observe a noisy outcome $Y^* = Y + U$. Plugging the proxy
+into OLS gives:
 
-Now suppose $Y^* = Y + U_Y$ where $U_Y \perp X$. Substituting into the regression:
+$$Y^* = \beta X + (\varepsilon + U)$$
 
-$$Y^* = \beta X + (\varepsilon + U_Y)$$
+**What happens to $\hat\beta_X$?**
 
-The measurement noise is absorbed into the composite residual. Since $U_Y \perp X$
-by assumption, $\beta$ remains **unbiased** — but residual variance rises, standard
-errors inflate, and statistical power falls. Attenuation is a treatment-measurement
-problem; outcome noise is a precision problem.
+$$\hat\beta_X = \frac{\text{Cov}(Y^*,\, X)}{\text{Var}(X)}
+= \frac{\text{Cov}(Y + U,\, X)}{\text{Var}(X)}
+= \frac{\text{Cov}(Y, X) + \text{Cov}(U, X)}{\text{Var}(X)}$$
+
+Under classical ME, $U \perp X$, so $\text{Cov}(U, X) = 0$:
+
+$$\hat\beta_X = \frac{\text{Cov}(Y, X)}{\text{Var}(X)} = \beta$$
+
+The measurement noise is absorbed entirely into the composite residual
+$\varepsilon + U$. Because $U$ is independent of $X$, it does not distort the
+signal between $X$ and $Y$, so the coefficient estimate is **unbiased**.
+However, the residual variance increases from $\sigma^2_\varepsilon$ to
+$\sigma^2_\varepsilon + \sigma^2_U$, which inflates standard errors and reduces
+$R^2$.
+
+### Exercise: Outcome measurement error
+The following exersize shows how analysis with a noisy measure of $Y$ compares
+to the ground truth. The `cars` dataset (built into base R) records stopping
+distance ($Y$, in feet) for 50 cars traveling at various speeds ($X$, in mph).
+Suppose a technician records stopping distance with a tape measure that has
+random error. We simulate what that technician would have recorded by creating a
+new variable where each datapoint is equal to the distance plus some random
+noise term. 
+
+<details>
+<summary>Load the data in R</summary>
+
+```r
+data(cars)
+set.seed(5)
+cars$dist_noisy <- cars$dist + rnorm(50, mean = 0, sd = 20)
+```
+
+</details>
+
+
+**Question 1.** Compute the measurement error $U = Y^* - Y$ (`dist_noisy` minus
+`dist`). What is the mean and standard deviation? 
+
+```r
+err <- cars$dist_noisy - cars$dist
+mean(err)
+sd(err)
+```
+
+**Question 2.** Check the correlation between the original `dist` and
+`dist_noisy`.
+
+```r
+cor(cars$dist, cars$dist_noisy)
+```
+
+**Question 3.** Regress stopping distance on speed using the original `dist` and
+then using `dist_noisy`. Compare the slope coefficients, standard errors, and
+$R^2$ across the two models. 
+
+```r
+summary(lm(dist       ~ speed, data = cars))
+summary(lm(dist_noisy ~ speed, data = cars))
+```
+
+::: {.callout-tip icon=false collapse=true}
+## Solution
+
+```r
+data(cars)
+set.seed(5)
+cars$dist_noisy <- cars$dist + rnorm(50, mean = 0, sd = 20)
+
+# error stats
+err <- cars$dist_noisy - cars$dist
+mean(err)   # ≈ 0.0 ft  — mean-zero, satisfies classical ME
+sd(err)     # ≈ 18.5 ft
+
+# correlation
+cor(cars$dist, cars$dist_noisy)   # ≈ 0.874
+
+# regression
+summary(lm(dist       ~ speed, data = cars))
+# slope = 3.93,  SE = 0.42,  R² = 0.651
+
+summary(lm(dist_noisy ~ speed, data = cars))
+# slope = 4.02,  SE = 0.58,  R² = 0.499  
+
+
+```
+:::
+
+The two slopes are nearly identical (3.93 vs 4.02). The difference is due to
+sampling noise. The standard error grows from 0.42 to 0.58 (+38%) and $R^2$
+falls from 0.651 to 0.499. A noisier outcome variable means you need a larger
+sample to detect the same true effect. :::
+
+### Simulation
+
+Each point below is one observation plotted as (true $Y$, observed $Y^*$). Drag
+the slider to add noise to the outcome variable and notive how the statistics
+update: the
+mean stays near zero while the standard deviation
+grows.
 
 ```{python}
 #| label: fig-outcome-me
-#| fig-cap: "ME in the outcome does not bias the slope but inflates the scatter around it."
+#| fig-cap: "Classical ME in the outcome: true Y (x-axis) vs observed Y* (y-axis). The error mean stays ~0 while the SD grows with noise."
 
-n = 500
+n = 100
 beta_true = 0.6
-reliabilities_y = np.round(np.arange(0.10, 1.01, 0.05), 2)
-X = rng.normal(0, 1, n)
-eps = rng.normal(0, 1, n)
-Y_true = beta_true * X + eps
+sigma_y_vals = np.round(np.arange(0.0, 2.05, 0.1), 1)
+X_ome = rng.normal(0, 1, n)
+eps_ome = rng.normal(0, 1, n)
+Y_true_ome = beta_true * X_ome + eps_ome
 
-frames_y, steps_y = [], []
-for lam in reliabilities_y:
-    var_uy = (1 - lam) / lam
-    Y_obs  = Y_true + rng.normal(0, np.sqrt(var_uy), n)
-    b_hat  = np.cov(Y_obs, X)[0, 1] / np.var(X)
-    xline2 = np.linspace(-3.5, 3.5, 120)
+frames_ome, steps_ome = [], []
+for sigma in sigma_y_vals:
+    U_Y = rng.normal(0, sigma, n) if sigma > 0 else np.zeros(n)
+    Y_obs_ome = Y_true_ome + U_Y
+    err_mean = float(np.mean(U_Y))
+    err_sd   = float(np.std(U_Y))
+    corr_yy  = float(np.corrcoef(Y_true_ome, Y_obs_ome)[0, 1])
 
-    frames_y.append(go.Frame(
-        name=str(lam),
+    frames_ome.append(go.Frame(
+        name=str(sigma),
         data=[
-            go.Scatter(x=X, y=Y_obs, mode="markers",
-                       marker=dict(size=3, color="steelblue", opacity=0.25),
-                       showlegend=False),
-            go.Scatter(x=xline2, y=beta_true * xline2, mode="lines",
-                       name=f"True β = {beta_true}",
-                       line=dict(color="green", width=2.5)),
-            go.Scatter(x=xline2, y=b_hat * xline2, mode="lines",
-                       name=f"OLS β̂ = {b_hat:.3f}",
-                       line=dict(color="crimson", width=2.5, dash="dash")),
+            go.Scatter(
+                x=Y_true_ome, y=Y_obs_ome, mode="markers",
+                marker=dict(size=4, color="steelblue", opacity=0.35),
+                name="Observations", showlegend=True,
+            ),
+            go.Scatter(
+                x=[-4, 4], y=[-4, 4], mode="lines",
+                name="Perfect measurement",
+                line=dict(color="gray", width=1.5, dash="dash"),
+                showlegend=True,
+            ),
+            go.Scatter(
+                x=[None], y=[None], mode="markers",
+                marker=dict(opacity=0),
+                name=f"Error mean = {err_mean:+.3f}   SD = {err_sd:.3f}   r(Y, Y*) = {corr_yy:.3f}",
+                showlegend=True,
+            ),
         ]
     ))
-    steps_y.append(dict(
-        method="animate", label=str(lam),
+    steps_ome.append(dict(
+        method="animate", label=str(sigma),
+        args=[[str(sigma)], dict(mode="immediate",
+                                  frame=dict(duration=0, redraw=True),
+                                  transition=dict(duration=0))]
+    ))
+
+fig_ome = go.Figure(data=frames_ome[0].data, frames=frames_ome)
+fig_ome.update_layout(
+    xaxis=dict(title="True outcome  Y", range=[-5, 5]),
+    yaxis=dict(title="Observed outcome  Y*", range=[-7, 7]),
+    legend=dict(x=0.02, y=0.98, bgcolor="rgba(255,255,255,0.75)"),
+    margin=dict(t=40, b=80),
+    sliders=[dict(
+        active=0,
+        currentvalue=dict(prefix="Noise σ = ", visible=True, xanchor="center"),
+        pad=dict(b=10, t=40),
+        steps=steps_ome,
+    )],
+    height=440,
+)
+show(fig_ome)
+```
+
+---
+
+$\beta_Z$ attenuates towards zero, but what happens to $\beta_X$? Can we predict
+the direction of bias? 
+
+### 4.1 Bias in Multivariate OLS
+The "pure" variation in $Z$ left after removing $X$ is the residual from regressing $Z$ on $X$:
+
+$$\sigma^2_{Z|X} = \text{Var}(Z) - \text{Var}(\hat{Z}_{|X}) \leq \sigma^2_Z$$
+
+The attenuation factor in the multivariate model becomes
+
+$$\lambda_1 = \frac{\sigma^2_{Z|X}}{\sigma^2_{Z|X} + \sigma^2_U}$$
+
+and 
+$$\hat\beta_{Z^*} = \lambda_1\,\beta_Z$$
+
+Because $\sigma^2_{Z|X} \leq \sigma^2_Z$ and $Z$ is correlated with $X$, we have
+$\lambda_1 \leq \lambda$. In words, classicial measurement error in multivariate
+regression accentuates attenuation in the variable with measurement error. 
+
+With a single covariate $Z$, let $\delta$ be the slope from the regression of $Z$ on $X$
+(i.e., $\mathbb{E}[Z \mid X] = \delta_0 + \delta X$). Then:
+
+$$\hat\beta_{X} = \beta_X + (1 - \lambda_1)\,\beta_Z\,\delta$$
+
+The bias term $(1 - \lambda_1)\beta_Z\delta$ is non-zero whenever $X$ and $Z$
+are correlated ($\delta \neq 0$) and $X$ has a true effect ($\beta_X \neq 0$).
+In other words, measurement error in a conditioning variables biases the
+treatment coefficient, and we cannot predict the direction of bias.
+
+The chart below makes this concrete. The true model is $Y = \beta_X X + \beta_Z
+Z + \varepsilon$ with $\beta_X = 1$ and $\beta_Z = 0.8$. $X$ and $Z$ are
+correlated ($\rho = 0.7$), so a noisy $Z^*$ leaves residual confounding that
+flows into $\hat\beta_X$. Drag the slider to reduce the reliability of $Z^*$
+and watch $\hat\beta_X$ depart from the truth.
+
+```{python}
+#| label: fig-conditioning-me
+#| fig-cap: "ME in the conditioning variable. The green line is the true β_X = 1; the red line is what OLS recovers from a noisy Z*. As reliability falls, residual confounding pushes β̂_X upward (because β_Z > 0 and ρ > 0)."
+
+n       = 2000
+bX_true = 1.0
+bZ      = 0.8
+rho     = 0.7   # X–Z correlation (confounding strength)
+
+rng2 = np.random.default_rng(7)
+
+# Generate data once — fixed across slider frames
+XZ  = rng2.multivariate_normal([0, 0], [[1, rho], [rho, 1]], n)
+X_c = XZ[:, 0]
+Z_c = XZ[:, 1]
+Y_c = bX_true * X_c + bZ * Z_c + rng2.normal(0, 1, n)
+
+lambdas_c = np.round(np.arange(0.10, 1.01, 0.05), 2)
+xline_c   = np.linspace(-3.5, 3.5, 120)
+sigma2_ZX = 1 - rho**2   # Var(Z | X) under unit-variance standardization
+
+frames_c, steps_c = [], []
+for lam in lambdas_c:
+    var_u = (1 - lam) / lam
+    U_c   = rng2.normal(0, np.sqrt(var_u), n)
+    Zs    = Z_c + U_c
+
+    A     = np.column_stack([np.ones(n), X_c, Zs])
+    coefs = np.linalg.lstsq(A, Y_c, rcond=None)[0]
+    bX_hat = coefs[1]
+
+    # Theoretical prediction
+    lam1    = sigma2_ZX / (sigma2_ZX + var_u)
+    bX_th   = bX_true + (1 - lam1) * bZ * rho
+
+    frames_c.append(go.Frame(
+        name=str(lam),
+        data=[
+            go.Scatter(x=X_c, y=Y_c, mode="markers",
+                       marker=dict(size=3, color="steelblue", opacity=0.15),
+                       showlegend=False),
+            go.Scatter(x=xline_c, y=bX_true * xline_c, mode="lines",
+                       name=f"True β_X = {bX_true}",
+                       line=dict(color="green", width=2.5)),
+            go.Scatter(x=xline_c, y=bX_hat * xline_c, mode="lines",
+                       name=f"OLS β̂_X = {bX_hat:.3f}",
+                       line=dict(color="crimson", width=2.5, dash="dash")),
+            go.Scatter(x=xline_c, y=bX_th * xline_c, mode="lines",
+                       name=f"Theory = {bX_th:.3f}",
+                       line=dict(color="darkorange", width=1.5, dash="dot")),
+        ]
+    ))
+    steps_c.append(dict(
+        method="animate",
+        label=str(lam),
         args=[[str(lam)], dict(mode="immediate",
                                frame=dict(duration=0, redraw=True),
                                transition=dict(duration=0))]
     ))
 
-fig_y = go.Figure(data=frames_y[-1].data, frames=frames_y)
-fig_y.update_layout(
-    xaxis=dict(title="X", range=[-4, 4]),
-    yaxis=dict(title="Observed Y*", range=[-5, 5]),
+init_c = frames_c[-1].data
+fig_c  = go.Figure(data=init_c, frames=frames_c)
+fig_c.update_layout(
+    xaxis=dict(title="X (Treatment)", range=[-4, 4]),
+    yaxis=dict(title="Y", range=[-5, 5]),
     legend=dict(x=0.02, y=0.98, bgcolor="rgba(255,255,255,0.7)"),
     margin=dict(t=40, b=80),
     sliders=[dict(
-        active=len(reliabilities_y) - 1,
-        currentvalue=dict(prefix="Outcome reliability = ", visible=True, xanchor="center"),
+        active=len(lambdas_c) - 1,
+        currentvalue=dict(prefix="Reliability λ(Z*) = ", visible=True, xanchor="center"),
         pad=dict(b=10, t=40),
-        steps=steps_y
+        steps=steps_c
     )],
     height=440,
 )
-show(fig_y)
+show(fig_c)
 ```
 
 ---
 
-## 3. ME in Conditioning Variables
+## 5. Instrumental Variables (IV) & 2SLS
 
-The treatment-error story has a parallel for confounders. Suppose $Z$ confounds
-the effect of $X$ on $Y$, but we observe only the noisy proxy $Z^* = Z + U_{Z^*}$.
-Controlling for $Z^*$ closes the backdoor path only partially: the residual
-correlation between $X$ and $Y$ through the uncontrolled part of $Z$ remains.
+So, now you know that measurment error causes problems... what can you do to
+accounnt for the bias caused by measurement error? 
 
-Unlike attenuation bias, the direction of the resulting confounding is not
-guaranteed. It depends on the signs and magnitudes of the paths $Z \to X$,
-$Z \to Y$, and the reliability $\lambda_{Z^*}$. In general:
+### IV for ME in Treatment Variables
+To recover $\beta$ consistently despite noisy $X^*$, we need a second proxy
+$T$ for the true $X$. The IV must satisfy three assumptions: 
 
-$$\hat\beta_{OLS} - \beta \;\propto\; \frac{(1-\lambda_{Z^*})\,\gamma_1 \gamma_2}
-{\text{Var}(X^*)(1 - \rho^2_{XZ^*})}$$
+1. **Exclusion**: $\text{Cov}(T, \varepsilon) = ($T$ affects $Y$ only
+   through $X$)
+2. **Independence**: $U_T \perp U_{X^*}$ (measurement errors in the two
+   proxies are independent)
+3. **Relevance**: $\text{Cov}(T, X^*) \neq 0$ ($T$ is correlated with
+   the mismeasured treatment)
 
-where $\gamma_1$ and $\gamma_2$ are the paths from $Z$ to $X$ and $Z$ to $Y$
-respectively. The bias can be positive or negative, and does not vanish as
-$n \to \infty$.
+Remember that we want to measure $\beta$ in We want to determine $\beta$ in $Y =
+\beta X + \varepsilon$ and we measure a noisy $X^* = X + U$. Then 
 
-```{dot}
-//| label: fig-dag-conditioning
-//| fig-cap: "ME in the conditioning variable: controlling for Z* instead of Z leaves the backdoor path X ← Z → Y partially open."
-//| fig-height: 2.2
-digraph {
-  rankdir=LR
-  node [fontname="Helvetica" fontsize=13]
-  Z   [shape=circle style=dashed label="Z (Unobserved)"]
-  Zs  [shape=square  label="Z* (Proxy)"]
-  UZs [shape=circle  style=dashed label="U_Z*"]
-  X   [shape=square  label="X (Treatment)"]
-  Y   [shape=square  label="Y (Outcome)"]
-  Z  -> X
-  Z  -> Y
-  Z  -> Zs  [style=dashed label="P(z*|z)"]
-  UZs -> Zs [style=dashed]
-  X  -> Y
-}
-```
+$$\text{Cov}(Y, Z) = \text{Cov}(\beta X + \varepsilon, Z) = \beta \text{Cov}(X, Z) 
+$$
 
-*[Add worked example here]*
+$$\text{Cov}(X^*, Z) = \text{Cov}(\beta X + U + \varepsilon, Z) =\text{Cov}(X, Z) 
+$$
 
----
+so $\hat{\beta} = \frac{\text{Cov}(Y, T)}{\text{Cov}(X^*, T)}$. In practice, this estimator is implemented as 2SLS. Let $T$ be a valid instrument.
 
-## 4. Instrumental Variables & 2SLS
+**Stage 1**: regress $X^*$ on $T$:
 
-### 4.1 The IV Idea
+$$\hat X^* = \hat\pi_0 + \hat\pi_1 T$$
 
-To recover $\beta$ consistently despite noisy $X^*$, we need a second proxy $T$
-for $X$ whose measurement error $U_T$ is independent of $U_{X^*}$. The IV estimator
-exploits the covariance between $Y$ and $T$ after projecting out noise:
-
-$$\hat\beta_{IV} = \frac{\text{Cov}(Y, T)}{\text{Cov}(X^*, T)}
-= \frac{\beta\,\text{Cov}(X, T)}{\text{Cov}(X, T)} = \beta$$
-
-The two assumptions $T \perp Y \mid X$ (exclusion restriction) and
-$U_T \perp U_{X^*}$ (independent measurement errors) jointly ensure consistency.
-
-### 4.2 Two-Stage Least Squares
-
-In practice the estimator is implemented as 2SLS. Let $Z$ be a valid instrument.
-
-**Stage 1** — regress $X^*$ on $Z$:
-
-$$\hat X^* = \hat\pi_0 + \hat\pi_1 Z$$
-
-**Stage 2** — regress $Y$ on $\hat X^*$:
+**Stage 2**: regress $Y$ on $\hat X^*$:
 
 $$Y = \alpha + \beta\,\hat X^* + \eta$$
 
-The fitted values $\hat X^*$ retain only the variation in $X^*$ attributable to
-the exogenous instrument. Because $Z$ is uncorrelated with $U$ and $\varepsilon$
-by assumption, $\hat X^*$ is uncorrelated with the stage-2 residual — the
-d-separation that makes $\hat\beta_{2SLS}$ consistent.
+### Exercise: BMI and Blood Pressure
+
+Higher BMI is a well-established risk factor for hypertension. A researcher
+wants to quantify how much systolic blood pressure rises per unit increase in
+BMI, using NHANES survey data. BMI is calculated from height and weight
+measurements, both of which carry small random errors (scale calibration,
+rounding). We simulate two independent BMI readings as proxies for each
+participant's true BMI — one used as the regressor, the other as the instrument:
+
+$$\text{BMI}^*_1 = \text{BMI} + U_1 \qquad \text{BMI}^*_2 = \text{BMI} + U_2
+\qquad U_1 \perp U_2$$
+
+With $\sigma_U = 4\ \text{kg/m}^2$ and $\text{SD}(\text{BMI}) \approx 7\
+\text{kg/m}^2$, the reliability ratio is $\lambda = 7^2/(7^2 + 4^2) \approx
+0.75$.
+
+#### Step 0: Load data and simulate measurement error
+
+```r
+library(NHANES)
+d <- na.omit(NHANES[, c("BPSysAve", "BMI")])
+
+set.seed(9)
+d$bmi_star <- d$BMI + rnorm(nrow(d), mean = 0, sd = 4)  # Reading 1 (noisy X*)
+d$bmi_iv   <- d$BMI + rnorm(nrow(d), mean = 0, sd = 4)  # Reading 2 (instrument)
+```
+
+#### Step 1: OLS with the noisy proxy
+
+```r
+ols_fit <- lm(BPSysAve ~ bmi_star, data = d)
+summary(ols_fit)
+```
+
+OLS recovers a slope of ~0.48, well below the benchmark of ~0.64 from the
+un-corrupted `BMI` column — attenuation of ~26%, consistent with $\lambda
+\approx 0.75$.
+
+#### Step 2: Manual 2SLS
+
+**Stage 1** — regress the noisy regressor on the instrument:
+
+```r
+stage1    <- lm(bmi_star ~ bmi_iv, data = d)
+summary(stage1)$r.squared   # ≈ 0.57 — very strong first stage (F > 10,000)
+```
+
+**Stage 2** — regress blood pressure on the fitted BMI from stage 1:
+
+```r
+d$bmi_hat <- fitted(stage1)
+stage2    <- lm(BPSysAve ~ bmi_hat, data = d)
+```
+
+Note: standard errors from manual stage 2 are incorrect. Use `ivreg()`.
+
+#### Step 3: 2SLS with `ivreg()`
+
+```r
+library(AER)
+iv_fit <- ivreg(BPSysAve ~ bmi_star | bmi_iv, data = d)
+summary(iv_fit)
+```
+
+#### Step 4: Compare
+
+```r
+library(stargazer)
+stargazer(ols_fit, stage2, iv_fit,
+          type          = "text",
+          column.labels = c("OLS (attenuated)", "Manual 2SLS", "ivreg 2SLS"),
+          dep.var.labels = "Systolic BP (mmHg)",
+          covariate.labels = c("BMI* (noisy)", "BMI (fitted)"),
+          keep.stat     = c("n", "rsq"))
+```
+
+::: {.callout-tip icon=false collapse=true}
+## Expected results
+
+| | OLS | Manual 2SLS | `ivreg` 2SLS |
+|---|---|---|---|
+| BMI | 0.48 | 0.65 | 0.65 |
+| SE | (0.023) | (wrong) | (0.030) |
+| $R^2$ | 0.050 | — | — |
+
+OLS attenuates the slope from the benchmark (~0.64) to 0.48 — a 26% shrinkage
+consistent with $\lambda \approx 0.75$. Both 2SLS approaches recover 0.65,
+almost exactly matching the un-corrupted estimate. The stage-1 $F$-statistic
+exceeds 10,000, confirming the instrument is very strong.
+:::
 
 ---
 
-## 5. Latent Variable Methods: SEM, Scoring & IRT
+## 6. Latent Variable Methods: SEM, Scoring & IRT
 
 
 ---
 
-## 6. Measurement Invariance
+## 7. Measurement Invariance
 
 ---
 
-## 7. Takeaways
+## 8. Takeaways
 
 - Measurement error is not a nuisance to note in a limitations section; it is a
   structural feature of the data-generating process with identifiable causal
@@ -397,3 +673,35 @@ d-separation that makes $\hat\beta_{2SLS}$ consistent.
   measurement model is available.
 - Before worrying about confounding or external validity, ask whether the measures
   themselves are valid proxies for the constructs of interest.
+
+---
+
+## Sources
+
+An, L. (2025). *Measurement in K-12 policy analysis* (Doctoral dissertation, Harvard University). <https://dash.harvard.edu/server/api/core/bitstreams/7035e654-685f-4d1a-837e-e66ab492c665/content>
+
+Bulbulia, J. A. (2024). Methods in causal inference. Part 3: Measurement error and external validity threats. *Evolutionary Human Sciences*, *6*, e42. <https://pmc.ncbi.nlm.nih.gov/articles/PMC4723683/pdf/dyu272.pdf>
+
+de Romémont, J. (2024). *Measurement in data science* [Lecture notes]. <https://uclspp.github.io/POLS0013/2-measurement-theory-and-error.html>
+
+Edwards, J. K., Cole, S. R., & Westreich, D. (2015). All your data are always missing: incorporating bias due to measurement error into the potential outcomes framework. *International Journal of Epidemiology*, *44*(4), 1452–1459. <https://pmc.ncbi.nlm.nih.gov/articles/PMC11588564/>
+
+Jovanović, M. (n.d.). *Measurement error*. bmbstats Book. <https://mladenjovanovic.github.io/bmbstats-book/measurement-error.html>
+
+Lauderdale, B. E. (in press). *Pragmatic social measurement*. <https://uclspp.github.io/POLS0013/00_textbook/pragmatic-social-measurement.pdf>
+
+Lemieux, T. (2019). *ECON 594: Lecture 8* [Lecture notes]. University of British Columbia. <https://econ2017.sites.olt.ubc.ca/files/2019/05/pdf_594lecture8_thomas-lemieux.pdf>
+
+Li, F. (2024). *Instrumental variables* [Lecture slides]. Duke University. <https://www2.stat.duke.edu/~fl35/teaching/640/Chapter6.1_InstrumentalVariables.pdf>
+
+Machielsen, B. (n.d.). *Measurement error*. <https://basmachielsen.nl/posts/measurement_error>
+
+Hanck, C., Arnold, M., Gerber, A., & Schmelzer, M. (n.d.). *Instrumental variables regression*. In *Introduction to econometrics with R* (Ch. 12). <https://www.econometrics-with-r.org/12-ivr.html>
+
+Pearl, J. (2012). On measurement bias in causal inference. *arXiv:1203.3504*. <https://doi.org/10.48550/arXiv.1203.3504>
+
+Pischke, S. (2007). *Lecture notes on measurement error* [Lecture notes]. London School of Economics. <https://econ.lse.ac.uk/staff/spischke/ec524/Merr_new.pdf>
+
+Rubin, E. (n.d.). *ARE 212: Section 11 — Measurement error* [Course notes]. University of California, Berkeley. <https://edrub.in/ARE212/section11.html#measurement_error>
+
+The Econometrics Blog. (n.d.). *Beyond classical measurement error*. <https://www.econometrics.blog/post/beyond-classical-measurement-error/>
