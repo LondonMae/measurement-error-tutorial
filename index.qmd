@@ -317,7 +317,7 @@ summary(lm(dist_noisy ~ speed, data = cars))
 The two slopes are nearly identical (3.93 vs 4.02). The difference is due to
 sampling noise. The standard error grows from 0.42 to 0.58 (+38%) and $R^2$
 falls from 0.651 to 0.499. A noisier outcome variable means you need a larger
-sample to detect the same true effect. :::
+sample to detect the same true effect. 
 
 ### Simulation
 
@@ -461,12 +461,16 @@ Explore the graph below to see how measurement error in a conditioning variable
 influence $\beta_X$. The starting DGP is $Y = \beta_X X + \beta_Z Z +
 \varepsilon$ with $\beta_X = 1$ and $\beta_Z = 0.8$. 
 
-::: {.callout-note collapse="true"} ## Try adjusting $\beta_Z$ using the
-dropdown menu. What happens to $\hat{\beta}_X$ when you flip the sign? In which
-direction is $\hat{\beta}_X$ biased for different values of $\beta_Z$?
+Try adjusting $\beta_Z$ using the dropdown menu. What happens to
+$\hat{\beta}_X$ when you flip the sign? In which direction is
+$\hat{\beta}_X$ biased for different values of $\beta_Z$?
 
-Remember that the bias on $\hat{\beta}_X$ is $(1 - \lambda_1)\beta_Z\delta$, so the direction
-of bias depends on the sign of $\beta_Z$ and $\delta$.
+::: {.callout-note collapse="true"}
+## Answer
+
+The bias on $\hat{\beta}_X$ is $(1 - \lambda_1)\beta_Z\delta$, so the
+direction of bias depends on the sign of $\beta_Z$ and $\delta$. 
+
 :::
 
 ```{python}
@@ -632,17 +636,22 @@ $$\hat X^* = \hat\pi_0 + \hat\pi_1 T$$
 $$Y = \alpha + \beta\,\hat X^* + \eta$$
 
 ### Exercise: BMI and Blood Pressure
-Below, you'll see how instramental variables can recover unbiased estimates. 
+Below, you'll see how instrumental variables can recover unbiased estimates.
 
 Higher BMI is a well-established risk factor for hypertension. A researcher
 wants to quantify how much systolic blood pressure rises per unit increase in
-BMI. The researcher suspects that reported BMI is subject to MEH due to scale calibration, rounding, or
-inconsistent self-reporting. 
+BMI. The researcher suspects that reported BMI is subject to ME due to scale
+calibration, rounding, or inconsistent self-reporting.
 
-We use the reported BMI as ground truth and simulate a noisy proxy and
-instrument:
+We treat the NHANES BMI column as ground truth and simulate two independent
+noisy readings:
 
-$$\text{BMI}^*_1 = \text{BMI} + U_1 \qquad \text{BMI}^*_2 = \text{BMI} + U_2$$
+$$\text{BMI}^*_1 = \text{BMI} + U_1, \quad U_1 \sim \mathcal{N}(0,\,4^2)$$
+$$\text{BMI}^*_2 = \text{BMI} + U_2, \quad U_2 \sim \mathcal{N}(1,\,10^2)$$
+
+$\text{BMI}^*_1$ is used as the mismeasured regressor; $\text{BMI}^*_2$ is used
+as the instrument. The non-zero mean in $U_2$ is harmless for IV because
+covariances are mean-centred — all that matters is that $U_1 \perp U_2$.
 
 #### Step 0: Load data and simulate measurement error
 
@@ -651,27 +660,32 @@ library(NHANES)
 d <- na.omit(NHANES[, c("BPSysAve", "BMI")])
 
 set.seed(9)
-d$bmi_star <- d$BMI + rnorm(nrow(d), mean = 0, sd = 4)  # Reading 1 (noisy X*)
-d$iv   <- d$BMI + rnorm(nrow(d), mean = 1, sd = 10)  # Reading 2 (instrument)
+d$bmi_star <- d$BMI + rnorm(nrow(d), mean = 0, sd = 4)   # noisy regressor X*
+d$iv       <- d$BMI + rnorm(nrow(d), mean = 1, sd = 10)  # instrument
 ```
 
-#### OLS with the noisy proxy
+#### Step 1: OLS benchmarks
 
 ```r
-ols_fit <- lm(BPSysAve ~ bmi_star, data = d)
+# Benchmark: OLS on true (unobserved) BMI
+ols_true <- lm(BPSysAve ~ BMI, data = d)
+
+# What we observe in practice: OLS on the noisy proxy
+ols_fit  <- lm(BPSysAve ~ bmi_star, data = d)
+
+summary(ols_true)
 summary(ols_fit)
 ```
-The OLS with the noisy proxy results in a coefficient of ~0.48, while the OLS
-with the true BMI results in a coefficient of ~0.64. 
 
-#### 2SLS with `ivreg()`
+#### Step 2: 2SLS with `ivreg()`
 
 ```r
 library(AER)
-iv_fit <- ivreg(BPSysAve ~ bmi_star | bmi_iv, data = d)
-summary(iv_fit)
+iv_fit <- ivreg(BPSysAve ~ bmi_star | iv, data = d)
+summary(iv_fit, diagnostics = TRUE)
 ```
-#### Compare
+
+#### Step 3: Compare all three
 
 ```r
 models <- list(
@@ -681,9 +695,9 @@ models <- list(
 )
 
 results <- sapply(models, function(m) {
-  coef <- coef(m)["BMI"]
-  se   <- sqrt(diag(vcov(m)))["BMI"]
-  c(estimate = round(coef, 3), se = round(se, 3))
+  b  <- round(coef(m)[2], 3)        # slope (2nd coef after intercept)
+  se <- round(sqrt(diag(vcov(m)))[2], 3)
+  c(estimate = b, se = se)
 })
 
 print(results)
@@ -694,63 +708,71 @@ print(results)
 
 | | OLS (true BMI) | OLS (noisy BMI) | 2SLS (`ivreg`) |
 |---|---|---|---|
-| BMI coefficient | 0.65 | 0.48 | 0.65 |
-| SE | (0.028) | (0.023) | (0.030) |
-```
+| BMI coefficient | 0.644 | ~0.499 | ~0.644 |
+| SE | (0.028) | (0.024) | (~0.043) |
 
-OLS attenuates the coefficient from ~0.64 to 0.48. The 2SLS recovers 0.65,
-which is close to the unbiased estimate. 
+OLS on the noisy proxy attenuates the coefficient from 0.644 to ~0.499 (the
+reliability ratio $\lambda = 7.4^2 / (7.4^2 + 4^2) \approx 0.77$ predicts
+$0.77 \times 0.644 \approx 0.50$). The 2SLS recovers the true slope. The
+larger SE relative to the OLS benchmark reflects the noisier instrument
+($\sigma_U = 10$); the first-stage $F$ remains well above 10, so the
+instrument is not weak.
 :::
 
 
-### 4.2 Proxy Variables as Instruments for an Unobserved Confounder
 
-The simulation above treats the confounder $Z$ as *observed*. A harder — and more realistic — case is when $Z$ itself is **never observed**: only noisy proxies of $Z$ are available. Pearl (2012) shows that if you have *two* such proxies, the direct effect $c_0$ of $X$ on $Y$ is still point-identified from the data.
-
-#### The structural model
+### 4.2 Proxy Variables as for an Unobserved Confounders
+Can we use instrumental variabels to recover unbaised effects when there is ME
+on a confounding variable? 
 
 Consider three variables, where $Z$ is the latent (never-observed) confounder:
-
 $$
 Y = c_0 X + c_2 Z + \varepsilon_Y, \qquad
 X = c_1 Z + \varepsilon_X, \qquad
 W = c_3 Z + \varepsilon_W
 $$
 
-$W$ is an **observed proxy** for $Z$ — it is caused by $Z$ but carries its own independent noise $\varepsilon_W$. Because $Z$ is unobserved, conditioning on $W$ is not enough: the backdoor path $X \leftarrow Z \rightarrow Y$ remains open, but OLS on $(X, W)$ will still be biased because the residual confounding through the unobserved part of $Z$ is not eliminated.
 
-#### Identification with one proxy
+::: {.callout-note collapse="true"}
+**$\text{Cov}(X, W)$:**
+$$\text{Cov}(X, W) = \text{Cov}(c_1 Z + \varepsilon_X,\ c_3 Z + \varepsilon_W)
+= c_1 c_3 \text{Var}(Z)$$
 
-Even with a single proxy $W$, we can identify $c_0$ **if** we already know $c_3^2 \text{Var}(Z)$ (the signal variance of $W$). In that case:
+**$\text{Var}(X)$:**
+$$\text{Var}(X) = \text{Var}(c_1 Z + \varepsilon_X) = c_1^2 \text{Var}(Z) +
+\text{Var}(\varepsilon_X)$$
+
+**$\text{Cov}(W, Y)$:**
+$$\text{Cov}(W, Y) = \text{Cov}(c_3 Z + \varepsilon_W,\ c_0 X + c_2 Z +
+\varepsilon_Y)$$
+$$= c_0 \text{Cov}(W, X) + c_2 c_3 \text{Var}(Z) = c_0 c_1 c_3 \text{Var}(Z)
++ c_2 c_3 \text{Var}(Z)$$
+$$= c_3(c_0 c_1 + c_2)\text{Var}(Z)$$
+
+**$\text{Cov}(X, Y)$:**
+$$\text{Cov}(X, Y) = \text{Cov}(c_1 Z + \varepsilon_X,\ c_0 X + c_2 Z +
+\varepsilon_Y)$$
+$$= c_0 \text{Var}(X) + c_2 c_1 \text{Var}(Z)$$
+$$= c_0[c_1^2\text{Var}(Z) + \text{Var}(\varepsilon_X)] + c_1 c_2\text{Var}(Z)$$
+
+
+:::
+
+If we express the structural parameters in terms of the variances and
+covariances of the *observed* variables, we get 
 
 $$
 c_0 = \frac{\text{Cov}(X,Y) - \dfrac{\text{Cov}(X,W)\,\text{Cov}(W,Y)}{c_3^2\,\text{Var}(Z)}}{\text{Var}(X) - \dfrac{\text{Cov}^2(X,W)}{c_3^2\,\text{Var}(Z)}} \tag{10}
 $$
 
-The denominator $c_3^2 \text{Var}(Z)$ represents how much of the variance in $W$ is actually *signal* about $Z$, not noise. From the model for $W$:
+but we don't observe $c_3^2 var(Z)$. If we have another proxy, or instrumental
+variable, for $Z$, then we can rewrite $c_0$ as 
 
-$$
-c_3^2\,\text{Var}(Z) = \text{Var}(W) - \text{Var}(\varepsilon_W) \tag{11}
-$$
+$$ \frac{\text{Cov}(X,Y)\text{Cov}(X,V) -
+\text{Cov}(Y,W)\text{Cov}(W,V)}{\text{Cov}(X,V)\text{Var}(X) -
+\text{Cov}(X,W)\text{Cov}(W,V)}$$. 
 
-So the signal variance is just total variance minus noise variance — but $\text{Var}(\varepsilon_W)$ is still unknown without additional data.
-
-#### Identification with two proxies
-
-When a **second independent proxy** $V$ is also available (e.g., $V = c_4 Z + \varepsilon_V$ with $\varepsilon_V \perp \varepsilon_W$), the need to know $c_3^2 \text{Var}(Z)$ disappears. Substituting and simplifying, $c_0$ is fully identified from sample covariances alone:
-
-$$
-c_0 = \frac{\text{Cov}(X,Y)\,\text{Cov}(X,V) - \text{Cov}(Y,W)\,\text{Cov}(W,V)}{\text{Cov}(X,V)\,\text{Var}(X) - \text{Cov}(X,W)\,\text{Cov}(W,V)} \tag{12}
-$$
-
-Intuitively, $V$ acts as an **instrument for** the confounded part of $X$: it is correlated with $Z$ (and therefore with $X$) but independent of $\varepsilon_Y$ and $\varepsilon_W$. Swapping which proxy is labelled $W$ versus $V$ yields the same estimator by symmetry.
-
-::: {.callout-note collapse="true"}
-## Connection to 2SLS
-
-Equation (12) has the same algebraic structure as 2SLS with instrument $V$. In practice you can implement it by regressing $X$ on $V$ (first stage), then regressing $Y$ on the fitted values $\hat X$ (second stage). The key validity condition — $V$ uncorrelated with $\varepsilon_Y$ — holds here because $V$'s only path to $Y$ runs through the latent $Z$, and that path is already accounted for in the model.
-:::
-
+Now, only observed variables appear in the estimator. 
 ---
 
 ## 6. Latent Variable Methods: SEM, Scoring & IRT
