@@ -86,7 +86,7 @@ digraph {
   D      [shape=square]
   Y      [shape=circle style=dashed]
   Ystar  [shape=square  label="Y*"]
-  UYstar [shape=circle  style=dashed label="U_Y*"]
+  UYstar [shape=circle  style=dashed label="U_Y*" width=0.45 height=0.45 fixedsize=true fontsize=10]
   D -> Y
   Y -> Ystar
   UYstar -> Ystar [style=dashed]
@@ -416,7 +416,7 @@ digraph {
   node [fontname="Helvetica" fontsize=13]
   Z     [shape=circle style=dashed]
   Zstar [shape=square  label="Z*"]
-  UZ    [shape=circle  style=dashed label="U_Z"]
+  UZ    [shape=circle  style=dashed label="U_Z" width=0.45 height=0.45 fixedsize=true fontsize=10]
   D     [shape=square]
   Y     [shape=square]
   Z -> D
