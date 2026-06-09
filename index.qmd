@@ -63,31 +63,31 @@ between the variable of interest and the noisy proxy.
 Classical measurement error occurs when the observed variable equals the the true value **plus**
 some noise:
 
-$$X^* = X + \varepsilon$$
+$$D^* = D + \varepsilon$$
 
 where the error term $\varepsilon$ satisfies four key assumptions:
 
 - $\mathbb{E}(\varepsilon) = 0$ (zero mean)
-- $\varepsilon \perp X$ (independent of the true value)
+- $\varepsilon \perp D$ (independent of the true value)
 - $\varepsilon \perp Y$ (independent of the outcome)
 - $\varepsilon \perp Z$ (independent of any covariate)
 
 ## Question
 What does the first assumption imply about the relationship between
-$\mathbb{E}(\varepsilon \mid X)$ and $\mathbb{E}(\varepsilon \mid X^*)$?
+$\mathbb{E}(\varepsilon \mid D)$ and $\mathbb{E}(\varepsilon \mid D^*)$?
 
 ```{dot}
 //| label: fig-dag-basic
-//| fig-cap: "We observe Y* (the proxy) but want to reason about the latent Y. The error U_Y* enters only through Y* and is independent of X."
+//| fig-cap: "We observe Y* (the proxy) but want to reason about the latent Y. The error U_Y* enters only through Y* and is independent of D."
 //| fig-height: 1.6
 digraph {
   rankdir=LR
   node [fontname="Helvetica" fontsize=13]
-  X      [shape=square]
+  D      [shape=square]
   Y      [shape=circle style=dashed]
   Ystar  [shape=square  label="Y*"]
   UYstar [shape=circle  style=dashed label="U_Y*"]
-  X -> Y
+  D -> Y
   Y -> Ystar
   UYstar -> Ystar [style=dashed]
 }
@@ -123,26 +123,26 @@ is perfect.
 ### 3.1 Causal Setup & Identification
 
 Throughout the tutorial, we are interested in measuring the average treatment
-effect (ATE) of $X$ on $Y$. Most of our results assume a linear regression
+effect (ATE) of $D$ on $Y$. Most of our results assume a linear regression
 model. Below, we explain how measurement error in treatment, conditioning, and
 outcome variables can influence findings.
 
 ### 3.2 Classical ME in Treatment: Attenuation Bias
-We want to determine $\beta$ in $Y = \beta X + \varepsilon$, but we
-observe only $X^* = X + U$. Plugging the proxy
+We want to determine $\beta$ in $Y = \beta D + \varepsilon$, but we
+observe only $D^* = D + U$. Plugging the proxy
 into OLS gives:
 
-$$\hat{\beta} = \frac{\text{Cov}(Y,\, X^*)}{\text{Var}(X^*)}
-= \frac{\text{Cov}(\beta X + \varepsilon,\; X + U)}{\text{Var}(X) + \text{Var}(U)}
-= \frac{\beta\,\text{Var}(X)}{\text{Var}(X) + \text{Var}(U)}
+$$\hat{\beta} = \frac{\text{Cov}(Y,\, D^*)}{\text{Var}(D^*)}
+= \frac{\text{Cov}(\beta D + \varepsilon,\; D + U)}{\text{Var}(D) + \text{Var}(U)}
+= \frac{\beta\,\text{Var}(D)}{\text{Var}(D) + \text{Var}(U)}
 = \beta\lambda$$
 
-where $\lambda = \frac{\text{Var}(X)}{\text{Var}(X) +
+where $\lambda = \frac{\text{Var}(D)}{\text{Var}(D) +
 \text{Var}(U)}$ is the **reliability ratio**. In the derivation above, we leverage the classical measurement error assumptions
-that $\text{Cov}(X, U) = 0$ and $\text{Cov}(\varepsilon, U) = 0$.
+that $\text{Cov}(D, U) = 0$ and $\text{Cov}(\varepsilon, U) = 0$.
 
 ::: {.callout-note collapse="true"}
-## In which direction is $\hat{\beta}$ biased when there is classical measurement error in $X$?
+## In which direction is $\hat{\beta}$ biased when there is classical measurement error in $D$?
 
 Because $\lambda < 1$, the OLS estimate attenuates toward zero. With $\lambda =
 0.5$, a true effect of $\beta = 0.6$ appears as $\hat{\beta} \approx 0.3$.
@@ -171,31 +171,31 @@ the causal estimate *attenuates*.
 n = 500
 beta_true = 0.6
 lambdas = np.round(np.arange(0.10, 1.01, 0.05), 2)
-xline = np.linspace(-3.5, 3.5, 120)
+dline = np.linspace(-3.5, 3.5, 120)
 
 frames, steps = [], []
 for lam in lambdas:
     var_u = (1 - lam) / lam
-    X_true = rng.normal(0, 1, n)
+    D_true = rng.normal(0, 1, n)
     U      = rng.normal(0, np.sqrt(var_u), n)
-    X_obs  = X_true + U
-    Y      = beta_true * X_true + rng.normal(0, 1, n)
-    b_hat  = np.cov(Y, X_obs)[0, 1] / np.var(X_obs)
+    D_obs  = D_true + U
+    Y      = beta_true * D_true + rng.normal(0, 1, n)
+    b_hat  = np.cov(Y, D_obs)[0, 1] / np.var(D_obs)
     b_th   = beta_true * lam
 
     frames.append(go.Frame(
         name=str(lam),
         data=[
-            go.Scatter(x=X_obs, y=Y, mode="markers",
+            go.Scatter(x=D_obs, y=Y, mode="markers",
                        marker=dict(size=3, color="steelblue", opacity=0.25),
                        showlegend=False),
-            go.Scatter(x=xline, y=beta_true * xline, mode="lines",
+            go.Scatter(x=dline, y=beta_true * dline, mode="lines",
                        name=f"True β = {beta_true}",
                        line=dict(color="green", width=2.5)),
-            go.Scatter(x=xline, y=b_hat * xline, mode="lines",
+            go.Scatter(x=dline, y=b_hat * dline, mode="lines",
                        name=f"OLS β̂ = {b_hat:.3f}",
                        line=dict(color="crimson", width=2.5, dash="dash")),
-            go.Scatter(x=xline, y=b_th * xline, mode="lines",
+            go.Scatter(x=dline, y=b_th * dline, mode="lines",
                        name=f"Theory βλ = {b_th:.3f}",
                        line=dict(color="darkorange", width=1.5, dash="dot")),
         ]
@@ -212,7 +212,7 @@ for lam in lambdas:
 init = frames[-1].data
 fig_att = go.Figure(data=init, frames=frames)
 fig_att.update_layout(
-    xaxis=dict(title="Observed X*", range=[-4, 4]),
+    xaxis=dict(title="Observed D*", range=[-4, 4]),
     yaxis=dict(title="Y", range=[-4, 4]),
     legend=dict(x=0.02, y=0.98, bgcolor="rgba(255,255,255,0.7)"),
     margin=dict(t=40, b=80),
@@ -228,96 +228,96 @@ show(fig_att)
 ```
 
 ### 3.3 ME in Outcome Variables
-We *still* want to determine $\beta$ in $Y = \beta X + \varepsilon$. This time, we
+We *still* want to determine $\beta$ in $Y = \beta D + \varepsilon$. This time, we
 observe a noisy outcome $Y^* = Y + U$. Plugging the proxy
 into OLS gives:
 
-$$Y^* = \beta X + (\varepsilon + U)$$
+$$Y^* = \beta D + (\varepsilon + U)$$
 
 The measurement noise is absorbed entirely into the composite residual
-$\varepsilon + U$. Because $U$ is independent of $X$, it does not bias the
-relationship between $X$ and $Y$.
+$\varepsilon + U$. Because $U$ is independent of $D$, it does not bias the
+relationship between $D$ and $Y$.
 However, the residual variance increases from $\sigma^2_\varepsilon$ to
 $\sigma^2_\varepsilon + \sigma^2_U$, which inflates standard errors and reduces
 $R^2$.
 
 ### Exercise: Outcome measurement error
 The following exersize shows how analysis with a noisy measure of $Y$ compares
-to the ground truth. The `cars` dataset (built into base R) records stopping
-distance ($Y$, in feet) for 50 cars traveling at various speeds ($X$, in mph).
-Suppose a technician records stopping distance with a tape measure that has
-random error. We simulate what that technician would have recorded by creating a
-new variable where each datapoint is equal to the distance plus some random
-noise term. 
+to the ground truth. The `Boston` dataset (in the `MASS` package) records
+median home value ($Y$, in \$1000s) for 506 Boston census tracts with varying
+proportions of lower-status residents ($D$, in %). Suppose a property assessor
+records home values with random appraisal error. We simulate what that assessor
+would have recorded by creating a new variable where each datapoint is equal to
+the home value plus some random noise term.
 
 <details>
 <summary>Load the data in R</summary>
 
 ```r
-data(cars)
-set.seed(5)
-cars$dist_noisy <- cars$dist + rnorm(50, mean = 0, sd = 20)
+library(MASS)
+data(Boston)
+set.seed(9)
+Boston$medv_noisy <- Boston$medv + rnorm(506, mean = 0, sd = 5)
 ```
 
 </details>
 
 
-**Question 1.** Compute the measurement error $U = Y^* - Y$ (`dist_noisy` minus
-`dist`). What is the mean and standard deviation? 
+**Question 1.** Compute the measurement error $U = Y^* - Y$ (`medv_noisy` minus
+`medv`). What is the mean and standard deviation?
 
 ```r
-err <- cars$dist_noisy - cars$dist
+err <- Boston$medv_noisy - Boston$medv
 mean(err)
 sd(err)
 ```
 
-**Question 2.** Check the correlation between the original `dist` and
-`dist_noisy`.
+**Question 2.** Check the correlation between the original `medv` and
+`medv_noisy`.
 
 ```r
-cor(cars$dist, cars$dist_noisy)
+cor(Boston$medv, Boston$medv_noisy)
 ```
 
-**Question 3.** Regress stopping distance on speed using the original `dist` and
-then using `dist_noisy`. Compare the slope coefficients, standard errors, and
-$R^2$ across the two models. 
+**Question 3.** Regress median home value on lower-status % using the original
+`medv` and then using `medv_noisy`. Compare the slope coefficients, standard
+errors, and $R^2$ across the two models.
 
 ```r
-summary(lm(dist       ~ speed, data = cars))
-summary(lm(dist_noisy ~ speed, data = cars))
+summary(lm(medv       ~ lstat, data = Boston))
+summary(lm(medv_noisy ~ lstat, data = Boston))
 ```
 
 ::: {.callout-tip icon=false collapse=true}
 ## Solution
 
 ```r
-data(cars)
-set.seed(5)
-cars$dist_noisy <- cars$dist + rnorm(50, mean = 0, sd = 20)
+library(MASS)
+data(Boston)
+set.seed(9)
+Boston$medv_noisy <- Boston$medv + rnorm(506, mean = 0, sd = 5)
 
 # error stats
-err <- cars$dist_noisy - cars$dist
-mean(err)   # ≈ 0.0 ft  — mean-zero, satisfies classical ME
-sd(err)     # ≈ 18.5 ft
+err <- Boston$medv_noisy - Boston$medv
+mean(err)   # ≈ 0.0  — mean-zero, satisfies classical ME
+sd(err)     # ≈ 4.8
 
 # correlation
-cor(cars$dist, cars$dist_noisy)   # ≈ 0.874
+cor(Boston$medv, Boston$medv_noisy)   # ≈ 0.881
 
 # regression
-summary(lm(dist       ~ speed, data = cars))
-# slope = 3.93,  SE = 0.42,  R² = 0.651
+summary(lm(medv       ~ lstat, data = Boston))
+# slope = -0.950,  SE = 0.039,  R² = 0.544
 
-summary(lm(dist_noisy ~ speed, data = cars))
-# slope = 4.02,  SE = 0.58,  R² = 0.499  
-
-
+summary(lm(medv_noisy ~ lstat, data = Boston))
+# slope = -0.944,  SE = 0.048,  R² = 0.433
 ```
 :::
 
-The two slopes are nearly identical (3.93 vs 4.02). The difference is due to
-sampling noise. The standard error grows from 0.42 to 0.58 (+38%) and $R^2$
-falls from 0.651 to 0.499. A noisier outcome variable means you need a larger
-sample to detect the same true effect. 
+The two slopes are nearly identical (-0.950 vs -0.944). The difference is due to
+sampling noise. The standard error grows from 0.039 to 0.048 (+24%) and $R^2$
+falls from 0.544 to 0.433. A noisier outcome variable means you need a larger
+sample to detect the same true effect.
 
 ### Simulation
 
@@ -334,9 +334,9 @@ grows.
 n = 100
 beta_true = 0.6
 sigma_y_vals = np.round(np.arange(0.0, 2.05, 0.1), 1)
-X_ome = rng.normal(0, 1, n)
+D_ome = rng.normal(0, 1, n)
 eps_ome = rng.normal(0, 1, n)
-Y_true_ome = beta_true * X_ome + eps_ome
+Y_true_ome = beta_true * D_ome + eps_ome
 
 frames_ome, steps_ome = [], []
 for sigma in sigma_y_vals:
@@ -395,21 +395,21 @@ show(fig_ome)
 ---
 
 ## 3.4 Measurement Error in Conditioning Variables
-We *still* want to determine the ATE of $X$ on $Y$. This time, we assume there
+We *still* want to determine the ATE of $D$ on $Y$. This time, we assume there
 is some confounding variable $Z$. Unfortunately, We only observe a noisy $Z^* =
-Z + U$ where $U_Z$ is classical ME (mean zero, independent of $X$, $Y$, and $Z$).
+Z + U$ where $U_Z$ is classical ME (mean zero, independent of $D$, $Y$, and $Z$).
 
 Plugging the proxy into a multivariate OLS gives:
 
-$$Y^* = \beta_Z X + + \beta_Z Z + \varepsilon $$
+$$Y^* = \beta_Z D + + \beta_Z Z + \varepsilon $$
 
-$\beta_Z$ attenuates, but what happens to $\beta_X$. We can read directly from
-the DAG and see that $\beta_X$ is biased: there is an open backdoor back from
-$X$ to $Y$ through $Z$, even after conditioning on $Z$. 
+$\beta_Z$ attenuates, but what happens to $\beta_D$. We can read directly from
+the DAG and see that $\beta_D$ is biased: there is an open backdoor back from
+$D$ to $Y$ through $Z$, even after conditioning on $Z$. 
 
 ```{dot}
 //| label: fig-dag-conditioning-me
-//| fig-cap: "ME in a conditioning variable. Z is the true (unobserved) confounder; Z* is the observed proxy. Conditioning on Z* instead of Z leaves the backdoor path X ← Z → Y partially open."
+//| fig-cap: "ME in a conditioning variable. Z is the true (unobserved) confounder; Z* is the observed proxy. Conditioning on Z* instead of Z leaves the backdoor path D ← Z → Y partially open."
 //| fig-height: 2.2
 digraph {
   rankdir=LR
@@ -417,13 +417,13 @@ digraph {
   Z     [shape=circle style=dashed]
   Zstar [shape=square  label="Z*"]
   UZ    [shape=circle  style=dashed label="U_Z"]
-  X     [shape=square]
+  D     [shape=square]
   Y     [shape=square]
-  Z -> X
+  Z -> D
   Z -> Y
   Z -> Zstar
   UZ -> Zstar [style=dashed]
-  X -> Y
+  D -> Y
 }
 ```
 
@@ -432,34 +432,34 @@ Let's explore how classical measurement error in a single variable affects
 coefficients in a multivariate OLS. 
 
 Remember that the variation in $Z$ left after removing the component of $Z$ explained by
-$X$ is the residual variance from regressing $Z$ on $X$:
+$D$ is the residual variance from regressing $Z$ on $D$:
 
-$$\sigma^2_{Z|X} = \text{Var}(Z) - \text{Var}(\hat{Z}_{|X}) \leq \sigma^2_Z$$
+$$\sigma^2_{Z|D} = \text{Var}(Z) - \text{Var}(\hat{Z}_{|D}) \leq \sigma^2_Z$$
 
 The attenuation factor in the multivariate model becomes
 
-$$\lambda_1 = \frac{\sigma^2_{Z|X}}{\sigma^2_{Z|X} + \sigma^2_U}$$
+$$\lambda_1 = \frac{\sigma^2_{Z|D}}{\sigma^2_{Z|D} + \sigma^2_U}$$
 
 and 
 $$\hat\beta_{Z^*} = \lambda_1\,\beta_Z$$
 
-Because $\sigma^2_{Z|X} \leq \sigma^2_Z$ and $Z$ is correlated with $X$, we have
+Because $\sigma^2_{Z|D} \leq \sigma^2_Z$ and $Z$ is correlated with $D$, we have
 $\lambda_1 \leq \lambda$. In words, classicial measurement error in multivariate
 regression accentuates attenuation in the variable with measurement error. 
 
-With a single covariate $Z$, let $\delta$ be the slope from the regression of $Z$ on $X$
-(i.e., $\mathbb{E}[Z \mid X] = \delta_0 + \delta X$). Then:
+With a single covariate $Z$, let $\delta$ be the slope from the regression of $Z$ on $D$
+(i.e., $\mathbb{E}[Z \mid D] = \delta_0 + \delta D$). Then:
 
-$$\hat\beta_{X} = \beta_X + (1 - \lambda_1)\,\beta_Z\,\delta$$
+$$\hat\beta_{D} = \beta_D + (1 - \lambda_1)\,\beta_Z\,\delta$$
 
-The bias term $(1 - \lambda_1)\beta_Z\delta$ is non-zero whenever $X$ and $Z$
-are correlated ($\delta \neq 0$) and $X$ has a true effect ($\beta_X \neq 0$).
+The bias term $(1 - \lambda_1)\beta_Z\delta$ is non-zero whenever $D$ and $Z$
+are correlated ($\delta \neq 0$) and $D$ has a true effect ($\beta_D \neq 0$).
 In other words, measurement error in a conditioning variables biases the
 treatment coefficient, and the direction of bias depends on $\beta_Z$.
 
 Explore the graph below to see how measurement error in a conditioning variable
-influence $\beta_X$. The starting DGP is $Y = \beta_X X + \beta_Z Z +
-\varepsilon$ with $\beta_X = 1$ and $\beta_Z = 0.8$. 
+influence $\beta_D$. The starting DGP is $Y = \beta_D D + \beta_Z Z +
+\varepsilon$ with $\beta_D = 1$ and $\beta_Z = 0.8$. 
 
 Try adjusting $\beta_Z$ using the dropdown menu. What happens to
 $\hat{\beta}_X$ when you flip the sign? In which direction is
@@ -475,56 +475,56 @@ direction of bias depends on the sign of $\beta_Z$ and $\delta$.
 
 ```{python}
 #| label: fig-conditioning-me
-#| fig-cap: "ME in the conditioning variable. Use the dropdown to change β_Z in the DGP; drag the slider to change the reliability of Z*. Green = true β_X = 1, red = OLS estimate, orange = theoretical prediction."
+#| fig-cap: "ME in the conditioning variable. Use the dropdown to change β_Z in the DGP; drag the slider to change the reliability of Z*. Green = true β_D = 1, red = OLS estimate, orange = theoretical prediction."
 
 n       = 200
-bX_true = 1.0
+bD_true = 1.0
 rho     = 0.7
 
 rng2 = np.random.default_rng(7)
-XZ   = rng2.multivariate_normal([0, 0], [[1, rho], [rho, 1]], n)
-X_c  = XZ[:, 0]
-Z_c  = XZ[:, 1]
+DZ   = rng2.multivariate_normal([0, 0], [[1, rho], [rho, 1]], n)
+D_c  = DZ[:, 0]
+Z_c  = DZ[:, 1]
 eps  = rng2.normal(0, 1, n)   # fixed noise — same draw for every bZ
 
 # Fixed ME noise for each lambda level so changing bZ doesn't reshuffle noise
 rng3 = np.random.default_rng(42)
 bz_vals   = [-0.8, -0.4, 0.0, 0.4, 0.8, 1.2, 1.6]
 lambdas_c = np.round(np.arange(0.1, 1.01, 0.1), 2)
-sigma2_ZX = 1 - rho**2
-xline_c   = np.linspace(-3.5, 3.5, 120)
+sigma2_ZD = 1 - rho**2
+dline_c   = np.linspace(-3.5, 3.5, 120)
 
 lam_noise = {}
 for lam in lambdas_c:
     var_u = (1 - lam) / lam if lam < 1.0 else 0.0
     lam_noise[float(lam)] = rng3.normal(0, np.sqrt(max(var_u, 1e-9)), n)
 
-def make_traces(bz, lam, X, Z, eps_arr):
-    Y_bz   = bX_true * X + bz * Z + eps_arr
+def make_traces(bz, lam, D, Z, eps_arr):
+    Y_bz   = bD_true * D + bz * Z + eps_arr
     var_u  = (1 - lam) / lam if lam < 1.0 else 0.0
     U_c    = lam_noise[float(lam)] if lam < 1.0 else np.zeros(n)
     Zs     = Z + U_c
-    A      = np.column_stack([np.ones(n), X, Zs])
+    A      = np.column_stack([np.ones(n), D, Zs])
     coefs  = np.linalg.lstsq(A, Y_bz, rcond=None)[0]
-    bX_hat = float(coefs[1])
-    lam1   = sigma2_ZX / (sigma2_ZX + var_u) if var_u > 0 else 1.0
-    bX_th  = bX_true + (1 - lam1) * bz * rho
-    return Y_bz, bX_hat, bX_th
+    bD_hat = float(coefs[1])
+    lam1   = sigma2_ZD / (sigma2_ZD + var_u) if var_u > 0 else 1.0
+    bD_th  = bD_true + (1 - lam1) * bz * rho
+    return Y_bz, bD_hat, bD_th
 
 def build_frame_data(bz, lam):
-    Y_bz, bX_hat, bX_th = make_traces(bz, lam, X_c, Z_c, eps)
+    Y_bz, bD_hat, bD_th = make_traces(bz, lam, D_c, Z_c, eps)
     return [
-        go.Scatter(x=X_c, y=Y_bz, mode="markers",
+        go.Scatter(x=D_c, y=Y_bz, mode="markers",
                    marker=dict(size=3, color="steelblue", opacity=0.12),
                    showlegend=False),
-        go.Scatter(x=xline_c, y=bX_true * xline_c, mode="lines",
-                   name=f"True β_X = {bX_true}",
+        go.Scatter(x=dline_c, y=bD_true * dline_c, mode="lines",
+                   name=f"True β_D = {bD_true}",
                    line=dict(color="green", width=2.5)),
-        go.Scatter(x=xline_c, y=bX_hat * xline_c, mode="lines",
-                   name=f"OLS β̂_X = {bX_hat:.3f}",
+        go.Scatter(x=dline_c, y=bD_hat * dline_c, mode="lines",
+                   name=f"OLS β̂_D = {bD_hat:.3f}",
                    line=dict(color="crimson", width=2.5, dash="dash")),
-        go.Scatter(x=xline_c, y=bX_th * xline_c, mode="lines",
-                   name=f"Theory = {bX_th:.3f}",
+        go.Scatter(x=dline_c, y=bD_th * dline_c, mode="lines",
+                   name=f"Theory = {bD_th:.3f}",
                    line=dict(color="darkorange", width=1.5, dash="dot")),
     ]
 
@@ -574,7 +574,7 @@ fig_c = go.Figure(
     data=default_frame.data,
     frames=all_frames,
     layout=go.Layout(
-        xaxis=dict(title="X (Treatment)", range=[-4, 4]),
+        xaxis=dict(title="D (Treatment)", range=[-4, 4]),
         yaxis=dict(title="Y", range=[-8, 8]),
         legend=dict(x=0.02, y=0.98, bgcolor="rgba(255,255,255,0.7)"),
         margin=dict(t=80, b=100),
@@ -605,35 +605,35 @@ show(fig_c)
 Now you know that measurment error can cause problems... but what can you do about it?!
 
 ### IV for ME in Treatment Variables
-To recover $\beta$ consistently despite noisy $X^*$, we need a second proxy
-$T$ for the true $X$. The IV must satisfy three assumptions: 
+To recover $\beta$ consistently despite noisy $D^*$, we need a second proxy
+$T$ for the true $D$. The IV must satisfy three assumptions: 
 
 1. **Exclusion**: $\text{Cov}(T, \varepsilon) = ($T$ affects $Y$ only
-   through $X$)
-2. **Independence**: $U_T \perp U_{X^*}$ (measurement errors in the two
+   through $D$)
+2. **Independence**: $U_T \perp U_{D^*}$ (measurement errors in the two
    proxies are independent)
-3. **Relevance**: $\text{Cov}(T, X^*) \neq 0$ ($T$ is correlated with
+3. **Relevance**: $\text{Cov}(T, D^*) \neq 0$ ($T$ is correlated with
    the mismeasured treatment)
 
 Remember that we want to measure $\beta$ in We want to determine $\beta$ in $Y =
-\beta X + \varepsilon$ and we measure a noisy $X^* = X + U$. Then 
+\beta D + \varepsilon$ and we measure a noisy $D^* = D + U$. Then 
 
-$$\text{Cov}(Y, Z) = \text{Cov}(\beta X + \varepsilon, Z) = \beta \text{Cov}(X,
+$$\text{Cov}(Y, Z) = \text{Cov}(\beta D + \varepsilon, Z) = \beta \text{Cov}(D,
 Z) $$
 
-$$\text{Cov}(X^*, Z) = \text{Cov}(\beta X + U + \varepsilon, Z) =\text{Cov}(X,
+$$\text{Cov}(D^*, Z) = \text{Cov}(\beta D + U + \varepsilon, Z) =\text{Cov}(D,
 Z) $$
 
-so $\hat{\beta} = \frac{\text{Cov}(Y, T)}{\text{Cov}(X^*, T)}$. In practice,
+so $\hat{\beta} = \frac{\text{Cov}(Y, T)}{\text{Cov}(D^*, T)}$. In practice,
 we can implement the estimator as a two-stage OLS:
 
-**Stage 1**: regress $X^*$ on $T$:
+**Stage 1**: regress $D^*$ on $T$:
 
-$$\hat X^* = \hat\pi_0 + \hat\pi_1 T$$
+$$\hat D^* = \hat\pi_0 + \hat\pi_1 T$$
 
-**Stage 2**: regress $Y$ on $\hat X^*$:
+**Stage 2**: regress $Y$ on $\hat D^*$:
 
-$$Y = \alpha + \beta\,\hat X^* + \eta$$
+$$Y = \alpha + \beta\,\hat D^* + \eta$$
 
 ### Exercise: BMI and Blood Pressure
 Below, you'll see how instrumental variables can recover unbiased estimates.
@@ -727,33 +727,33 @@ on a confounding variable?
 
 Consider three variables, where $Z$ is the latent (never-observed) confounder:
 $$
-Y = c_0 X + c_2 Z + \varepsilon_Y, \qquad
-X = c_1 Z + \varepsilon_X, \qquad
+Y = c_0 D + c_2 Z + \varepsilon_Y, \qquad
+D = c_1 Z + \varepsilon_D, \qquad
 W = c_3 Z + \varepsilon_W
 $$
 
 
 ::: {.callout-note collapse="true"}
-**$\text{Cov}(X, W)$:**
-$$\text{Cov}(X, W) = \text{Cov}(c_1 Z + \varepsilon_X,\ c_3 Z + \varepsilon_W)
+**$\text{Cov}(D, W)$:**
+$$\text{Cov}(D, W) = \text{Cov}(c_1 Z + \varepsilon_D,\ c_3 Z + \varepsilon_W)
 = c_1 c_3 \text{Var}(Z)$$
 
-**$\text{Var}(X)$:**
-$$\text{Var}(X) = \text{Var}(c_1 Z + \varepsilon_X) = c_1^2 \text{Var}(Z) +
-\text{Var}(\varepsilon_X)$$
+**$\text{Var}(D)$:**
+$$\text{Var}(D) = \text{Var}(c_1 Z + \varepsilon_D) = c_1^2 \text{Var}(Z) +
+\text{Var}(\varepsilon_D)$$
 
 **$\text{Cov}(W, Y)$:**
-$$\text{Cov}(W, Y) = \text{Cov}(c_3 Z + \varepsilon_W,\ c_0 X + c_2 Z +
+$$\text{Cov}(W, Y) = \text{Cov}(c_3 Z + \varepsilon_W,\ c_0 D + c_2 Z +
 \varepsilon_Y)$$
-$$= c_0 \text{Cov}(W, X) + c_2 c_3 \text{Var}(Z) = c_0 c_1 c_3 \text{Var}(Z)
+$$= c_0 \text{Cov}(W, D) + c_2 c_3 \text{Var}(Z) = c_0 c_1 c_3 \text{Var}(Z)
 + c_2 c_3 \text{Var}(Z)$$
 $$= c_3(c_0 c_1 + c_2)\text{Var}(Z)$$
 
-**$\text{Cov}(X, Y)$:**
-$$\text{Cov}(X, Y) = \text{Cov}(c_1 Z + \varepsilon_X,\ c_0 X + c_2 Z +
+**$\text{Cov}(D, Y)$:**
+$$\text{Cov}(D, Y) = \text{Cov}(c_1 Z + \varepsilon_D,\ c_0 D + c_2 Z +
 \varepsilon_Y)$$
-$$= c_0 \text{Var}(X) + c_2 c_1 \text{Var}(Z)$$
-$$= c_0[c_1^2\text{Var}(Z) + \text{Var}(\varepsilon_X)] + c_1 c_2\text{Var}(Z)$$
+$$= c_0 \text{Var}(D) + c_2 c_1 \text{Var}(Z)$$
+$$= c_0[c_1^2\text{Var}(Z) + \text{Var}(\varepsilon_D)] + c_1 c_2\text{Var}(Z)$$
 
 
 :::
@@ -762,15 +762,15 @@ If we express the structural parameters in terms of the variances and
 covariances of the *observed* variables, we get 
 
 $$
-c_0 = \frac{\text{Cov}(X,Y) - \dfrac{\text{Cov}(X,W)\,\text{Cov}(W,Y)}{c_3^2\,\text{Var}(Z)}}{\text{Var}(X) - \dfrac{\text{Cov}^2(X,W)}{c_3^2\,\text{Var}(Z)}} \tag{10}
+c_0 = \frac{\text{Cov}(D,Y) - \dfrac{\text{Cov}(D,W)\,\text{Cov}(W,Y)}{c_3^2\,\text{Var}(Z)}}{\text{Var}(D) - \dfrac{\text{Cov}^2(D,W)}{c_3^2\,\text{Var}(Z)}} \tag{10}
 $$
 
 but we don't observe $c_3^2 var(Z)$. If we have another proxy, or instrumental
 variable, for $Z$, then we can rewrite $c_0$ as 
 
-$$ \frac{\text{Cov}(X,Y)\text{Cov}(X,V) -
-\text{Cov}(Y,W)\text{Cov}(W,V)}{\text{Cov}(X,V)\text{Var}(X) -
-\text{Cov}(X,W)\text{Cov}(W,V)}$$. 
+$$ \frac{\text{Cov}(D,Y)\text{Cov}(D,V) -
+\text{Cov}(Y,W)\text{Cov}(W,V)}{\text{Cov}(D,V)\text{Var}(D) -
+\text{Cov}(D,W)\text{Cov}(W,V)}$$. 
 
 Now, only observed variables appear in the estimator. 
 ---
