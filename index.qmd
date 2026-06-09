@@ -3,8 +3,6 @@ title: "Measurement Error in Causal Inference"
 author: "Bielicke, L. and Xochihua-Tlecuitl, T."
 date: today
 jupyter: python3
-filters:
-  - live
 format:
   html:
     toc: true
