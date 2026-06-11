@@ -63,20 +63,20 @@ between the variable of interest and a noisy proxy.
 Classical measurement error occurs when the observed variable equals the the true value **plus**
 some noise:
 
-$$D^* = D + \varepsilon$$
+$$D^* = D + U$$
 
-where the error term $\varepsilon$ satisfies four key assumptions:
+where the error term $U$ satisfies four key assumptions:
 
-- $\mathbb{E}(\varepsilon) = 0$ (zero mean)
-- $\varepsilon \perp D$ (independent of the true value)
-- $\varepsilon \perp Y$ (independent of the outcome)
-- $\varepsilon \perp Z$ (independent of any covariate)
+- $\mathbb{E}(U) = 0$ (zero mean)
+- $U \perp D$ (independent of the true value)
+- $U \perp Y$ (independent of the outcome)
+- $U \perp Z$ (independent of any covariate)
 
 The DAG below encodes the independence assumptions. 
 
 ```{dot}
 //| label: fig-dag-basic
-//| fig-cap: "We observe Y* (the proxy) but we are interested in Y. The error U depends only on Y*."
+//| fig-cap: "We observe Y* (the proxy) but we are interested in Y."
 //| fig-height: 1.6
 digraph {
   rankdir=LR
@@ -93,6 +93,21 @@ digraph {
 
 There are other types of measurmemnt error (e.g., differential). We will focus
 on classicial measurment error throughout this tutorial. 
+
+::: {.callout-note}
+## Question
+
+Can a binary variable have classical ME? Why or why not?
+:::
+
+::: {.callout-tip collapse="true"}
+## Answer
+No. Classical ME requires $U \perp Z$, but if $Z$ is binary ($Z \in \{0, 1\}$),
+the error term is necessarily correlated with $Z$. For example, since $U = Z* - Z$, if Z
+is 1 then Z* must be 0 and U is -1, and if Z is 0 then Z* must be 1 and U is 1. 
+:::
+
+
 
 ### 2 Motivating Example: Subjective Well-Being
 
@@ -136,23 +151,31 @@ $$\hat{\beta} = \frac{\text{Cov}(Y,\, D^*)}{\text{Var}(D^*)} =
 \frac{\text{Cov}(\beta D + \varepsilon,\; D + U)}{\text{Var}(D) + \text{Var}(U)}
 = \frac{\beta\,\text{Var}(D)}{\text{Var}(D) + \text{Var}(U)} = \beta\lambda$$
 
-where $\lambda = \frac{\text{Var}(D)}{\text{Var}(D) + \text{Var}(U)}$ is the
+where $\lambda = \text{Var}(D) / (\text{Var}(D) + \text{Var}(U))$ is the
 **reliability ratio**. In the derivation above, we leverage the classical
 ME assumptions that $\text{Cov}(D, U) = 0$ and
 $\text{Cov}(\varepsilon, U) = 0$.
 
-::: {.callout-note collapse="true"}
-## In which direction is $\hat{\beta}$ biased when there is classical
-measurement error in $D$ (hint: what is the value of $\lambda$)?
 
-Because $\lambda < 1$, the OLS estimate attenuates toward zero. For example,
-when  $\lambda =
-0.5$, a true effect of $\beta = 0.6$ appears as $\hat{\beta} \approx 0.3$.
+::: {.callout-note}
+## Question
+
+In which direction is $\hat{\beta}$ biased when there is classical measurement
+error in $D$? (Hint: what is the value of $\lambda$?)
 :::
 
-::: {.callout-tip} ## Attenuation Bias Attenuation bias occurs when a
-regressor's estimated coefficient is biased toward zero. Mesurement error on
-treatment variables results in attenuation bias. 
+::: {.callout-tip collapse="true"}
+## Answer
+Because $\lambda < 1$, the OLS estimate attenuates toward zero. For example, when $\lambda = 0.5$, a true effect of $\beta = 0.6$ appears as $\hat{\beta} \approx 0.3$.
+:::
+
+
+::: {.callout-tip}
+## Attenuation Bias
+
+Attenuation bias occurs when a regressor's estimated coefficient is biased
+toward zero. Measurement error on treatment variables results in attenuation
+bias.
 :::
 
 Explore the chart below to see how the reliability ratio affects our causal
@@ -162,38 +185,81 @@ the causal estimate is attenuated.
 
 ```{python}
 #| label: fig-attenuation
-#| fig-cap: "Attenuation bias as reliability decreases. The green line is the true slope; the red dashed line is what OLS recovers from the noisy proxy."
+#| fig-cap: "Attenuation bias as reliability decreases. The sage line is the true slope; the purple dashed line is what OLS recovers from the noisy proxy."
 
-n = 100
-beta_true = 0.6
+n = 50
+beta_true = 1.0
 lambdas = np.round(np.arange(0.10, 1.01, 0.05), 2)
 dline = np.linspace(-3.5, 3.5, 120)
 
-frames, steps = [], []
+# Pre-compute all per-λ values so we can build background lines
+lam_data = []
 for lam in lambdas:
-    var_u = (1 - lam) / lam
+    var_u  = (1 - lam) / lam
     D_true = rng.normal(0, 1, n)
     U      = rng.normal(0, np.sqrt(var_u), n)
     D_obs  = D_true + U
     Y      = beta_true * D_true + rng.normal(0, 1, n)
     b_hat  = np.cov(Y, D_obs)[0, 1] / np.var(D_obs)
     b_th   = beta_true * lam
+    lam_data.append((D_obs, Y, b_hat, b_th))
 
+# K independent OLS simulations per λ — background updates with the slider
+K      = 5
+bg_rng = np.random.default_rng(99)
+bg_hats = {}
+for lam in lambdas:
+    var_u = (1 - lam) / lam
+    hats  = []
+    for _ in range(K):
+        Dt = bg_rng.normal(0, 1, n)
+        U  = bg_rng.normal(0, np.sqrt(max(var_u, 0)), n)
+        Do = Dt + U
+        Yb = beta_true * Dt + bg_rng.normal(0, 1, n)
+        hats.append(np.cov(Yb, Do)[0, 1] / np.var(Do))
+    bg_hats[float(lam)] = hats
+
+# Background traces first (indices 0–K-1); foreground at K–K+3
+D_obs_i, Y_i, b_hat_i, b_th_i = lam_data[-1]
+init_bg = [
+    go.Scatter(x=dline, y=bg_hats[float(lambdas[-1])][k] * dline, mode="lines",
+               line=dict(color="rgba(138,110,181,0.25)", width=1.5),
+               showlegend=False, hoverinfo="skip")
+    for k in range(K)
+]
+init_fg = [
+    go.Scatter(x=D_obs_i, y=Y_i, mode="markers",
+               marker=dict(size=3, color="#7a9baa", opacity=0.25),
+               showlegend=False),
+    go.Scatter(x=dline, y=beta_true * dline, mode="lines",
+               name=f"True β = {beta_true}",
+               line=dict(color="#739e7e", width=2.5)),
+    go.Scatter(x=dline, y=b_hat_i * dline, mode="lines",
+               name=f"OLS β̂ = {b_hat_i:.3f}",
+               line=dict(color="#8a6eb5", width=2.5, dash="dash")),
+    go.Scatter(x=dline, y=b_th_i * dline, mode="lines",
+               name=f"Theory βλ = {b_th_i:.3f}",
+               line=dict(color="#c4a8d4", width=1.5, dash="dot")),
+]
+
+frames, steps = [], []
+for lam, (D_obs, Y, b_hat, b_th) in zip(lambdas, lam_data):
+    bg_updates = [go.Scatter(y=bg_hats[float(lam)][k] * dline) for k in range(K)]
     frames.append(go.Frame(
         name=str(lam),
-        data=[
+        data=bg_updates + [
             go.Scatter(x=D_obs, y=Y, mode="markers",
-                       marker=dict(size=3, color="steelblue", opacity=0.25),
+                       marker=dict(size=3, color="#7a9baa", opacity=0.25),
                        showlegend=False),
             go.Scatter(x=dline, y=beta_true * dline, mode="lines",
                        name=f"True β = {beta_true}",
-                       line=dict(color="green", width=2.5)),
+                       line=dict(color="#739e7e", width=2.5)),
             go.Scatter(x=dline, y=b_hat * dline, mode="lines",
                        name=f"OLS β̂ = {b_hat:.3f}",
-                       line=dict(color="crimson", width=2.5, dash="dash")),
+                       line=dict(color="#8a6eb5", width=2.5, dash="dash")),
             go.Scatter(x=dline, y=b_th * dline, mode="lines",
                        name=f"Theory βλ = {b_th:.3f}",
-                       line=dict(color="darkorange", width=1.5, dash="dot")),
+                       line=dict(color="#c4a8d4", width=1.5, dash="dot")),
         ]
     ))
     steps.append(dict(
@@ -204,9 +270,7 @@ for lam in lambdas:
                                transition=dict(duration=0))]
     ))
 
-# start at λ=1.0 (last frame)
-init = frames[-1].data
-fig_att = go.Figure(data=init, frames=frames)
+fig_att = go.Figure(data=init_bg + init_fg, frames=frames)
 fig_att.update_layout(
     xaxis=dict(title="Observed D*", range=[-4, 4]),
     yaxis=dict(title="Y", range=[-4, 4]),
@@ -345,7 +409,7 @@ for sigma in sigma_y_vals:
         data=[
             go.Scatter(
                 x=Y_true_ome, y=Y_obs_ome, mode="markers",
-                marker=dict(size=4, color="steelblue", opacity=0.35),
+                marker=dict(size=4, color="#7a9baa", opacity=0.35),
                 name="Observations", showlegend=True,
             ),
             go.Scatter(
@@ -395,20 +459,20 @@ Z + U$ where $U_Z$ is classical ME (mean zero, independent of $D$, $Y$, and $Z$)
 
 We want to determine $\beta_Z$ in:
 
-$$Y = \beta_D D + \beta_Z Z + \varepsilon $$
+$$Y = \beta_D D + \beta_Z Z + \varepsilon_1 $$
 
-But we only observe \beta_{Z^*} in:
+But we only observe $\beta_{Z^*}$ in:
 
-$$Y = \beta_D D + \beta_{Z^*} Z^* + \varepsilon^* $$
+$$Y = \beta_D D + \beta_{Z^*} Z^* + \varepsilon_2 $$
 
 $\beta_{Z^*}$ is biased towards zero as in the bivariate regression, but what happens to $\beta_D$? We can see directly from
 the DAG structure that $\beta_D$ is biased: there is an open backdoor back from
-$D$ to $Y$ through $Z$, even after conditioning on $Z^*$. 
+$D$ to $Y$ through $Z$, even after conditioning on $Z^*$:
 
 
 ```{dot}
 //| label: fig-dag-conditioning
-//| fig-cap: "ME in the conditioning variable: controlling for Z* instead of Z leaves the backdoor path X ← Z → Y partially open."
+//| fig-cap: "Classical ME in the conditioning variable: controlling for Z* instead of Z leaves the backdoor path X ← Z → Y open."
 //| fig-height: 2.2
 digraph {
   rankdir=LR
@@ -500,11 +564,11 @@ direction of bias depends on the sign of $\beta_Z$ and $\delta$.
 
 ```{python}
 #| label: fig-conditioning-me
-#| fig-cap: "ME in the conditioning variable. Use the dropdown to change β_Z in the DGP; drag the slider to change the reliability of Z*. Green = true β_D = 1, red = OLS estimate, orange = theoretical prediction."
+#| fig-cap: "ME in the conditioning variable. Use the dropdown to change β_Z in the DGP; drag the slider to change the reliability of Z*. Sage = true β_D = 1, purple = OLS estimate, lavender = theoretical prediction."
 
-n       = 200
+n       = 50
 bD_true = 1.0
-rho     = 0.7
+rho     = 0.85
 
 rng2 = np.random.default_rng(7)
 DZ   = rng2.multivariate_normal([0, 0], [[1, rho], [rho, 1]], n)
@@ -536,89 +600,158 @@ def make_traces(bz, lam, D, Z, eps_arr):
     bD_th  = bD_true + (1 - lam1) * bz * rho
     return Y_bz, bD_hat, bD_th
 
-def build_frame_data(bz, lam):
+def build_avp(bz, lam):
+    """Compute added-variable plot residuals and regression coefficients."""
     Y_bz, bD_hat, bD_th = make_traces(bz, lam, D_c, Z_c, eps)
-    return [
-        go.Scatter(x=D_c, y=Y_bz, mode="markers",
-                   marker=dict(size=3, color="steelblue", opacity=0.12),
-                   showlegend=False),
-        go.Scatter(x=dline_c, y=bD_true * dline_c, mode="lines",
+    U_c = lam_noise[float(lam)] if lam < 1.0 else np.zeros(n)
+    Zs  = Z_c + U_c
+    A_z = np.column_stack([np.ones(n), Zs])
+    M_D = D_c  - A_z @ np.linalg.lstsq(A_z, D_c,  rcond=None)[0]
+    M_Y = Y_bz - A_z @ np.linalg.lstsq(A_z, Y_bz, rcond=None)[0]
+    return M_D, M_Y, bD_hat, bD_th
+
+mrange       = np.linspace(-3, 3, 120)
+n_bz         = len(bz_vals)
+lam_full_idx = len(lambdas_c) - 1
+default_bzi  = bz_vals.index(0.8)
+
+# Pre-compute all (bzi, lami) combinations
+avp = {(bzi, lami): build_avp(bz, lam)
+       for bzi, bz   in enumerate(bz_vals)
+       for lami, lam in enumerate(lambdas_c)}
+
+n_lam = len(lambdas_c)
+K_c   = 5  # background draws per (bzi, lami)
+
+# K_c independent fresh-dataset OLS estimates per (bzi, lami) — mirrors treatment sim.
+bg_rng_c = np.random.default_rng(77)
+bg_c_hats = {}
+for bzi, bz in enumerate(bz_vals):
+    for lami, lam in enumerate(lambdas_c):
+        var_u = (1 - lam) / lam if lam < 1.0 else 0.0
+        hats = []
+        for _ in range(K_c):
+            DZ_bg  = bg_rng_c.multivariate_normal([0, 0], [[1, rho], [rho, 1]], n)
+            D_bg   = DZ_bg[:, 0]
+            Z_bg   = DZ_bg[:, 1]
+            U_bg   = bg_rng_c.normal(0, np.sqrt(max(var_u, 1e-9)), n)
+            Y_bg   = bD_true * D_bg + bz * Z_bg + bg_rng_c.normal(0, 1, n)
+            A_bg   = np.column_stack([np.ones(n), D_bg, Z_bg + U_bg])
+            hats.append(float(np.linalg.lstsq(A_bg, Y_bg, rcond=None)[0][1]))
+        bg_c_hats[(bzi, lami)] = hats
+
+# Background: K_c traces per β_Z group → 35 total, indices 0–34.
+bg_traces = []
+for bzi in range(n_bz):
+    vis = (bzi == default_bzi)
+    for k in range(K_c):
+        bD_bg = bg_c_hats[(bzi, lam_full_idx)][k]
+        bg_traces.append(go.Scatter(
+            x=list(mrange), y=list(bD_bg * mrange), mode="lines",
+            line=dict(color="rgba(138,110,181,0.25)", width=1.5),
+            visible=vis, showlegend=False, hoverinfo="skip",
+        ))
+
+# Foreground: 28 traces (4 per β_Z), indices 35–62.
+fg_traces = []
+for bzi in range(n_bz):
+    M_D, M_Y, bD_hat, bD_th = avp[(bzi, lam_full_idx)]
+    vis = (bzi == default_bzi)
+    fg_traces += [
+        go.Scatter(x=list(M_D), y=list(M_Y), mode="markers",
+                   marker=dict(size=3, color="#7a9baa", opacity=0.25),
+                   visible=vis, showlegend=False),
+        go.Scatter(x=list(mrange), y=list(bD_true * mrange), mode="lines",
                    name=f"True β_D = {bD_true}",
-                   line=dict(color="green", width=2.5)),
-        go.Scatter(x=dline_c, y=bD_hat * dline_c, mode="lines",
+                   line=dict(color="#739e7e", width=2.5),
+                   visible=vis, showlegend=vis),
+        go.Scatter(x=list(mrange), y=list(bD_hat * mrange), mode="lines",
                    name=f"OLS β̂_D = {bD_hat:.3f}",
-                   line=dict(color="crimson", width=2.5, dash="dash")),
-        go.Scatter(x=dline_c, y=bD_th * dline_c, mode="lines",
+                   line=dict(color="#8a6eb5", width=2.5, dash="dash"),
+                   visible=vis, showlegend=vis),
+        go.Scatter(x=list(mrange), y=list(bD_th * mrange), mode="lines",
                    name=f"Theory = {bD_th:.3f}",
-                   line=dict(color="darkorange", width=1.5, dash="dot")),
+                   line=dict(color="#c4a8d4", width=1.5, dash="dot"),
+                   visible=vis, showlegend=vis),
     ]
+
+init_traces = bg_traces + fg_traces  # 35 bg + 28 fg = 63 total
+
+# 10 frames — 63 data elements each (35 bg + 28 fg), no traces parameter.
+all_frames = []
+for lami, lam in enumerate(lambdas_c):
+    frame_data = []
+    for bzi in range(n_bz):
+        for k in range(K_c):
+            frame_data.append(go.Scatter(y=list(bg_c_hats[(bzi, lami)][k] * mrange)))
+    for bzi in range(n_bz):
+        M_D, M_Y, bD_hat, bD_th = avp[(bzi, lami)]
+        frame_data += [
+            go.Scatter(x=list(M_D), y=list(M_Y)),
+            go.Scatter(x=list(mrange), y=list(bD_true * mrange),
+                       name=f"True β_D = {bD_true}",
+                       line=dict(color="#739e7e", width=2.5)),
+            go.Scatter(x=list(mrange), y=list(bD_hat * mrange),
+                       name=f"OLS β̂_D = {bD_hat:.3f}",
+                       line=dict(color="#8a6eb5", width=2.5, dash="dash")),
+            go.Scatter(x=list(mrange), y=list(bD_th * mrange),
+                       name=f"Theory = {bD_th:.3f}",
+                       line=dict(color="#c4a8d4", width=1.5, dash="dot")),
+        ]
+    all_frames.append(go.Frame(name=f"lam{lami}", data=frame_data))
 
 animate_args = dict(mode="immediate", frame=dict(duration=0, redraw=True),
                     transition=dict(duration=0))
 
-all_frames = []
-for bzi, bz in enumerate(bz_vals):
-    lam_steps = []
-    for lami, lam in enumerate(lambdas_c):
-        fname = f"bz{bzi}_lam{lami}"
-        all_frames.append(go.Frame(name=fname, data=build_frame_data(bz, lam)))
-        lam_steps.append(dict(
-            method="animate", label=str(lam),
-            args=[[fname], animate_args]
-        ))
-    # Transition frame: animating here resets lambda slider to lam=1.0 via layout
-    lam_full_idx = len(lambdas_c) - 1
-    all_frames.append(go.Frame(
-        name=f"bz{bzi}_init",
-        data=build_frame_data(bz, lambdas_c[lam_full_idx]),
-        layout=dict(sliders=[dict(
-            active=lam_full_idx,
-            currentvalue=dict(prefix="Reliability λ(Z*) = ", visible=True, xanchor="center"),
-            pad=dict(b=10, t=40),
-            steps=lam_steps,
-        )])
-    ))
-
-default_bzi = bz_vals.index(0.8)
-init_lam_steps = [
+lam_steps = [
     dict(method="animate", label=str(lam),
-         args=[[f"bz{default_bzi}_lam{lami}"], animate_args])
+         args=[[f"lam{lami}"], animate_args])
     for lami, lam in enumerate(lambdas_c)
 ]
 
-bz_buttons = [
-    dict(label=f"β_Z = {bz:+.1f}", method="animate",
-         args=[[f"bz{bzi}_init"], animate_args])
-    for bzi, bz in enumerate(bz_vals)
-]
-
-default_frame = next(f for f in all_frames
-                     if f.name == f"bz{default_bzi}_lam{len(lambdas_c)-1}")
+# β_Z restyle — 63 visibility values (35 bg then 28 fg)
+bz_steps = []
+for bzi_sel in range(n_bz):
+    vis_list, sl_list = [], []
+    for bzi in range(n_bz):
+        for _ in range(K_c):
+            vis_list.append(bzi == bzi_sel)
+            sl_list.append(False)
+    for bzi in range(n_bz):
+        v = (bzi == bzi_sel)
+        vis_list += [v,     v,    v,    v]
+        sl_list  += [False, v,    v,    v]
+    bz_steps.append(dict(
+        method="restyle",
+        label=f"{bz_vals[bzi_sel]:+.1f}",
+        args=[{"visible": vis_list, "showlegend": sl_list}],
+    ))
 
 fig_c = go.Figure(
-    data=default_frame.data,
+    data=init_traces,
     frames=all_frames,
     layout=go.Layout(
-        xaxis=dict(title="D (Treatment)", range=[-4, 4]),
-        yaxis=dict(title="Y", range=[-8, 8]),
+        xaxis=dict(title="D | Z* (residualized)", range=[-3, 3]),
+        yaxis=dict(title="Y | Z* (residualized)", range=[-6, 6]),
         legend=dict(x=0.02, y=0.98, bgcolor="rgba(255,255,255,0.7)"),
-        margin=dict(t=80, b=100),
-        height=500,
-        updatemenus=[dict(
-            type="dropdown",
-            direction="down",
-            x=0.0, xanchor="left",
-            y=1.18, yanchor="top",
-            showactive=True,
-            active=default_bzi,
-            buttons=bz_buttons,
-        )],
-        sliders=[dict(
-            active=len(lambdas_c) - 1,
-            currentvalue=dict(prefix="Reliability λ(Z*) = ", visible=True, xanchor="center"),
-            pad=dict(b=10, t=40),
-            steps=init_lam_steps,
-        )],
+        margin=dict(t=40, b=110),
+        height=530,
+        sliders=[
+            dict(
+                active=lam_full_idx,
+                x=0.0, len=0.47, xanchor="left",
+                currentvalue=dict(prefix="λ(Z*) = ", visible=True, xanchor="center"),
+                pad=dict(b=10, t=40),
+                steps=lam_steps,
+            ),
+            dict(
+                active=default_bzi,
+                x=0.53, len=0.47, xanchor="left",
+                currentvalue=dict(prefix="β_Z = ", visible=True, xanchor="center"),
+                pad=dict(b=10, t=40),
+                steps=bz_steps,
+            ),
+        ],
     )
 )
 show(fig_c)
@@ -631,7 +764,7 @@ Below, we will show how using instrumental
 variables can recover unbiased estimates when there is (i) classical ME in the
 treatment variable and (ii) classical ME in a confounding variable. 
 
-### IV for ME in Treatment Variables
+### IV for Classical ME in Treatment Variables
 To recover $\beta$ consistently despite noisy $D^*$, we need a second proxy
 $T$ for the true $D$. The IV must satisfy three assumptions: 
 
@@ -648,12 +781,10 @@ Remember that we want to determine $\beta$ in $Y =
 $$\text{Cov}(Y, T) = \text{Cov}(\beta D + \varepsilon, T) = \beta \text{Cov}(D,
 T) $$
 
-and 
-
 $$\text{Cov}(D^*, T) = \text{Cov}(D + U_D, T) =\text{Cov}(D,
 T) $$
 
-so $\hat{\beta} = \frac{\text{Cov}(Y, T)}{\text{Cov}(D^*, T)}$. 
+so $\hat{\beta} = \text{Cov}(Y, T) / \text{Cov}(D^*, T)$. 
 
 In the first derivation, we leverage the exclusion assumption; in the second,
 we leverage the exogeneity assumption. 
@@ -752,92 +883,73 @@ recovers the true slope despite using noisy proxies.
 :::
 
 
-### 4.2 Proxy Variables as Instruments for an Unobserved Confounder
+### IV for Classical ME in Confounding Variables
 We can also use instrumental variables to recover unbiased effects when there is
 classical ME in a confounding variable.
 
 Consider the structural model below, where $Z$ is the latent (never-observed)
-confounder, $W$ and $V$ are two independent observed proxies for $Z$, and
+confounder, $Z^*$ is a noisy proxy for $Z$, and
 $\beta_0$ is the causal effect we want to estimate:
 
-$$
-Y = \beta_0 D + \beta_2 Z + \varepsilon_Y, \qquad
-D = \beta_1 Z + \varepsilon_D, \qquad
-W = \beta_3 Z + \varepsilon_W, \qquad
-V = \beta_4 Z + \varepsilon_V
-$$
+$$Y = \beta_0 D + \beta_2 Z + U_Y$$
 
-```{dot}
-//| label: fig-dag-proxy-iv
-//| fig-cap: "Proxy-variable IV setup. Z is the unobserved confounder; W and V are two independent noisy proxies of Z. V acts as an instrument: it affects D and Y only through Z, and its noise ε_V is independent of ε_W."
-//| fig-height: 2.2
-digraph {
-  rankdir=LR
-  node [fontname="Helvetica" fontsize=13]
-  Z  [shape=circle style=dashed]
-  D  [shape=square]
-  Y  [shape=square]
-  W  [shape=square]
-  V  [shape=square]
-  eW [shape=circle style=dashed label="ε_W" width=0.45 height=0.45 fixedsize=true fontsize=10]
-  eV [shape=circle style=dashed label="ε_V" width=0.45 height=0.45 fixedsize=true fontsize=10]
-  { rank=same; W; D; V }
-  Z -> D  [label="β₁"]
-  Z -> Y  [label="β₂"]
-  Z -> W  [label="β₃"]
-  Z -> V  [label="β₄"]
-  D -> Y  [label="β₀"]
-  eW -> W [style=dashed]
-  eV -> V [style=dashed]
-}
-```
+$$D = \beta_1 Z + U_D$$
 
-::: {.callout-note collapse="true"}
+$$Z^* = \beta_3 Z + U_{Z^*}$$
 
-**Key Covariances:**
 
-$$\begin{aligned}
-\text{Cov}(D, W) &= \beta_1 \beta_3 \text{Var}(Z) \\
-\text{Cov}(W, Y) &= \beta_3(\beta_0 \beta_1 + \beta_2)\text{Var}(Z) \\
-\text{Cov}(D, Y) &= \beta_0\text{Var}(D) + \beta_1 \beta_2 \text{Var}(Z)
-\end{aligned}$$
+We can express $\beta_0$ in terms of the variances and covariances of the
+*observed* variables. 
 
-**Derivation of Equation (10):**
 
-Substitute $\beta_1\text{Var}(Z) = \text{Cov}(D,W) / \beta_3$ and
-$\beta_2\text{Var}(Z) = \text{Cov}(W,Y) / \beta_3 - \beta_0 \beta_1\text{Var}(Z)$
-to eliminate $\beta_1 \beta_2 \text{Var}(Z)$ in $\text{Cov}(D, Y)$:
-
-$$\beta_1 \beta_2 \text{Var}(Z) = \frac{\text{Cov}(D,W)\,\text{Cov}(W,Y)}{\beta_3^2\,\text{Var}(Z)} -
-\beta_0\frac{\text{Cov}^2(D,W)}{\beta_3^2\,\text{Var}(Z)}$$
-
-Substituting back and collecting $\beta_0$ terms:
-
-$$\text{Cov}(D,Y) - \frac{\text{Cov}(D,W)\,\text{Cov}(W,Y)}{\beta_3^2\,\text{Var}(Z)} =
-\beta_0\left[\text{Var}(D) - \frac{\text{Cov}^2(D,W)}{\beta_3^2\,\text{Var}(Z)}\right]$$
-
-so
-
-$$\beta_0 = \frac{\text{Cov}(D,Y) -
-\dfrac{\text{Cov}(D,W)\,\text{Cov}(W,Y)}{\beta_3^2\,\text{Var}(Z)}}{\text{Var}(D) -
-\dfrac{\text{Cov}^2(D,W)}{\beta_3^2\,\text{Var}(Z)}}$$
-:::
-
-If we express $\beta_0$ in terms of the variances and covariances of the
-*observed* variables, we get
+After some algebra, we get
 
 $$ \beta_0 = \frac{\text{Cov}(D,Y) -
-\dfrac{\text{Cov}(D,W)\,\text{Cov}(W,Y)}{\beta_3^2\,\text{Var}(Z)}}{\text{Var}(D)
-- \dfrac{\text{Cov}^2(D,W)}{\beta_3^2\,\text{Var}(Z)}} \tag{10} $$
+\text{Cov}(D,Z^*)\,\text{Cov}(Z^*,Y)  /  \beta_3^2\,\text{Var}(Z)}{\text{Var}(D)
+- \text{Cov}^2(D,Z^*) / \beta_3^2\,\text{Var}(Z)} \tag{1} $$
 
 but we don't observe $\beta_3^2 \text{Var}(Z)$. With the second proxy $V$ we can
-identify $\beta_3^2$ \text{Var}(Z) =
-\dfrac{\text{Cov}(D,W)\,\text{Cov}(W,V)}{\text{Cov}(D,V)}$. Substituting into
-(10) yields an estimator that depends only on observed covariances:
+identify:
+
+$$\beta_3^2 \text{Var}(Z) = \text{Cov}(D,Z^*)\,\text{Cov}(Z^*,V) / \text{Cov}(D,V)
+\tag{2} $$
+
+::: {.callout-tip collapse="true"}
+## Why does $\beta_3^2 \text{Var}(Z) = \text{Cov}(D,Z^*)\,\text{Cov}(Z^*,V) / \text{Cov}(D,V)$
+
+Structural equation for our instrument: $V = \beta_4 Z + U_V$. We can derive the
+following covariances: 
+
+$$\text{Cov}(D, Z^*) = \beta_1 \beta_3 \text{Var}(Z)$$
+$$\text{Cov}(D, V) = \beta_1 \beta_4 \text{Var}(Z)$$
+$$\text{Cov}(Z^*, V) = \beta_3 \beta_4 \text{Var}(Z)$$
+
+So we get
+
+$$\frac{\text{Cov}(D, Z^*)\,\text{Cov}(Z^*, V)}{\text{Cov}(D, V)} = \frac{\beta_1 \beta_3 \text{Var}(Z) \cdot \beta_3 \beta_4 \text{Var}(Z)}{\beta_1 \beta_4 \text{Var}(Z)}= \beta_3^2 \text{Var}(Z) \tag{2}$$
+:::
+
+Substituting (2) into (1) yields an estimator that depends only on
+observed covariances:
 
 $$\beta_0 = \frac{\text{Cov}(D,Y)\,\text{Cov}(D,V) -
-\text{Cov}(Y,W)\,\text{Cov}(W,V)}{\text{Cov}(D,V)\,\text{Var}(D) -
-\text{Cov}(D,W)\,\text{Cov}(W,V)} \tag{12}$$
+\text{Cov}(Y,Z^*)\,\text{Cov}(Z^*,V)}{\text{Cov}(D,V)\,\text{Var}(D) -
+\text{Cov}(D,Z^*)\,\text{Cov}(Z^*,V)} \tag{3}$$
+
+
+::: {.callout-note}
+## Question
+Without a second proxy $V$, equation (1) cannot be estimated from observed
+data alone. What quantity do we need to know to estimate equation (1) without
+a proxy?
+:::
+
+::: {.callout-tip collapse="true"}
+## Answer
+
+We need to know $\beta_3^2\,\text{Var}(Z)$. We don't observe this quantity
+because $Z$ is unobserved. 
+:::
 
 ---
 
