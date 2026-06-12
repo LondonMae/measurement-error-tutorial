@@ -2,26 +2,26 @@
 
 # ==============================================================================
 # Exercise 1: Classical ME in Outcome
-# RQ: What is the relationship between age and blood pressure?
+# RQ: Does study time improve GPA?
 # ==============================================================================
 
 # %% Setup
-library(NHANES)
-d_bp <- na.omit(NHANES[, c("BPSysAve", "Age")])
+library(wooldridge)
+d_gpa <- na.omit(gpa1[, c("colGPA", "study")])
 set.seed(5)
-d_bp$BP_noisy <- d_bp$BPSysAve + rnorm(nrow(d_bp), mean = 0, sd = 15)
+d_gpa$gpa_noisy <- d_gpa$colGPA + rnorm(nrow(d_gpa), mean = 0, sd = 0.3)
 
 # %% Q1. mean and std
-err <- d_bp$BP_noisy - d_bp$BPSysAve
-mean(err)   # ≈ 0.0  
-sd(err)     # ≈ 15.1
+err <- d_gpa$gpa_noisy - d_gpa$colGPA
+mean(err)   # ≈ 0.0
+sd(err)     # ≈ 0.3
 
 # %% Q2. correlation between proxy and ground truth
-cor(d_bp$BPSysAve, d_bp$BP_noisy) 
+cor(d_gpa$colGPA, d_gpa$gpa_noisy)
 
 # %% Q3. Regression comparison
-summary(lm(BPSysAve ~ Age, data = d_bp)) # true BP
-summary(lm(BP_noisy ~ Age, data = d_bp)) # noisy BP
+summary(lm(colGPA    ~ study, data = d_gpa))  # true GPA
+summary(lm(gpa_noisy ~ study, data = d_gpa))  # noisy GPA
 
 
 

@@ -35,12 +35,12 @@ rng = np.random.default_rng(42)
 
 By the end of this tutorial you should be able to:
 
-1. Define *classical* measurement error 
+1. Define measurement error 
 2. Describe how classical measurement error influences treatment, conditioning,
 and outcome variables differently
-4. Apply instrumental variables and 2SLS to correct for measurement bias
-5. TODO
-6. TODO
+4. Apply instrumental variables and 2SLS to recover unbiased estimates
+5. Operationalize constructs as latent variables
+6. Ensure measurement models meet specific invariance requirements 
 :::
 
 ---
@@ -49,17 +49,137 @@ and outcome variables differently
 **Measurement
 error** is the misalignment between the true state of a variable and its reported
 state. We often assume that the variables we reason about are the variables
-we observe. This assumption rarely holds in practive. Instead, we observe some
+we observe. This assumption rarely holds in practice. Instead, we observe some
 *proxy variable*
 i.e., a noisy or imperfect stand-in for the true variable of interest. 
 
 Understanding measurement error is important because the variable we draw
 conclusions *with* is not always the variable we draw conclusions *about*.
-To identify unbiased causal estimates, we need to understadn the relationship
+To identify unbiased causal estimates, we need to understand the relationship
 between the variable of interest and a noisy proxy. 
 
 
-### 1.1 Classical Measurement Error
+### 1.1 Motivating Example: Subjective Well-Being
+
+Researchers are studying the effect of happiness on physical activity. Because
+they cannot measure partipants' happiness directly, they use a self-reported to
+determine happiness. The researchers believe that the self-reports, though not a
+perfect representation of happiness, correlate with partipants true happiness
+levels. 
+
+```{=html}
+<style>
+.swls-item { border: 0.5px solid var(--color-border-tertiary); border-radius: 12px; padding: 1rem 1.25rem; margin-bottom: 12px; background: #fff; }
+.swls-q { font-size: 15px; font-weight: 500; margin: 0 0 12px; }
+.swls-labels { display: flex; justify-content: space-between; font-size: 11px; color: #888; margin-top: 6px; }
+.swls-btns { display: flex; gap: 6px; flex-wrap: wrap; }
+.swls-btn { flex: 1; min-width: 36px; padding: 6px 4px; font-size: 13px; border: 0.5px solid #ccc; border-radius: 8px; background: transparent; color: #555; cursor: pointer; transition: background 0.1s; }
+.swls-btn:hover { background: #f5f5f5; }
+.swls-btn.selected { background: #EEEDFE; border-color: #534AB7; color: #3C3489; font-weight: 500; }
+.score-card { border-radius: 12px; padding: 1.25rem 1.5rem; margin-top: 1.5rem; background: #f7f7f7; border: 0.5px solid #ddd; }
+.score-num { font-size: 36px; font-weight: 500; }
+.score-label { font-size: 14px; color: #666; margin-top: 4px; }
+.score-bar-bg { height: 8px; border-radius: 4px; background: #e0e0e0; margin: 12px 0 4px; }
+.score-bar-fill { height: 8px; border-radius: 4px; background: #534AB7; transition: width 0.3s; }
+.score-range { display: flex; justify-content: space-between; font-size: 11px; color: #aaa; }
+.swls-note { font-size: 12px; color: #aaa; margin-top: 1rem; line-height: 1.5; }
+</style>
+
+<div style="padding: 1rem 0;">
+
+<div class="swls-item">
+  <p class="swls-q">1. In most ways my life is close to my ideal.</p>
+  <div class="swls-btns" id="q1"></div>
+  <div class="swls-labels"><span>Strongly disagree</span><span>Strongly agree</span></div>
+</div>
+
+<div class="swls-item">
+  <p class="swls-q">2. The conditions of my life are excellent.</p>
+  <div class="swls-btns" id="q2"></div>
+  <div class="swls-labels"><span>Strongly disagree</span><span>Strongly agree</span></div>
+</div>
+
+<div class="swls-item">
+  <p class="swls-q">3. I am satisfied with my life.</p>
+  <div class="swls-btns" id="q3"></div>
+  <div class="swls-labels"><span>Strongly disagree</span><span>Strongly agree</span></div>
+</div>
+
+<div class="swls-item">
+  <p class="swls-q">4. So far I have gotten the important things I want in life.</p>
+  <div class="swls-btns" id="q4"></div>
+  <div class="swls-labels"><span>Strongly disagree</span><span>Strongly agree</span></div>
+</div>
+
+<div class="swls-item">
+  <p class="swls-q">5. If I could live my life over, I would change almost nothing.</p>
+  <div class="swls-btns" id="q5"></div>
+  <div class="swls-labels"><span>Strongly disagree</span><span>Strongly agree</span></div>
+</div>
+
+<div class="score-card">
+  <div style="display:flex; align-items:baseline; gap:10px;">
+    <span class="score-num" id="score-num">—</span>
+    <span class="score-label" id="score-label">Answer all five items to see your score</span>
+  </div>
+  <div class="score-bar-bg"><div class="score-bar-fill" id="score-bar" style="width:0%"></div></div>
+  <div class="score-range"><span>5</span><span>35</span></div>
+</div>
+
+<p class="swls-note">Diener, E., Emmons, R. A., Larsen, R. J., &amp; Griffin, S. (1985). The Satisfaction with Life Scale. <em>Journal of Personality Assessment, 49</em>(1), 71–75. Free to use for research and educational purposes with attribution.</p>
+
+</div>
+
+<script>
+const bands = [
+  [31,35,'Extremely satisfied'],
+  [26,30,'Satisfied'],
+  [21,25,'Slightly satisfied'],
+  [20,20,'Neutral'],
+  [15,19,'Slightly dissatisfied'],
+  [10,14,'Dissatisfied'],
+  [5,9,'Extremely dissatisfied']
+];
+const answers = {q1:null,q2:null,q3:null,q4:null,q5:null};
+
+['q1','q2','q3','q4','q5'].forEach(id => {
+  const container = document.getElementById(id);
+  ['1','2','3','4','5','6','7'].forEach((l,i) => {
+    const btn = document.createElement('button');
+    btn.className = 'swls-btn';
+    btn.textContent = l;
+    btn.onclick = () => {
+      container.querySelectorAll('.swls-btn').forEach(b => b.classList.remove('selected'));
+      btn.classList.add('selected');
+      answers[id] = i + 1;
+      update();
+    };
+    container.appendChild(btn);
+  });
+});
+
+function update() {
+  const vals = Object.values(answers);
+  if (vals.some(v => v === null)) return;
+  const total = vals.reduce((a,b) => a+b, 0);
+  document.getElementById('score-num').textContent = total;
+  const band = bands.find(([lo,hi]) => total >= lo && total <= hi);
+  document.getElementById('score-label').textContent = band ? band[2] : '';
+  document.getElementById('score-bar').style.width = ((total - 5) / 30 * 100).toFixed(1) + '%';
+}
+</script>
+```
+
+
+::: {.callout-note}
+## Note
+Prior work shows that single scale surveys correlate with true metrics
+at roughly $r = 0.5$, while multi-item scales reach about $r = 0.8$. Neither
+is perfect!
+:::
+
+
+### 1.2 Classical Measurement Error
 Classical measurement error occurs when the observed variable equals the the true value **plus**
 some noise:
 
@@ -92,7 +212,7 @@ digraph {
 ```
 
 There are other types of measurmemnt error (e.g., differential). We will focus
-on classicial measurment error throughout this tutorial. 
+on classicial measurement error throughout this tutorial. 
 
 ::: {.callout-note}
 ## Question
@@ -107,25 +227,7 @@ the error term is necessarily correlated with $Z$. For example, since $U = Z* - 
 is 1 then Z* must be 0 and U is -1, and if Z is 0 then Z* must be 1 and U is 1. 
 :::
 
-
-
-### 2 Motivating Example: Subjective Well-Being
-
-Researchers are studying the effect of happiness on physical activity. Because
-they cannot measure partipants' happiness directly, they use a self-reported to
-determine happiness. The researchers believe that the self-reports, though not a
-perfect representation of happiness, correlate with partipants true happiness
-levels. 
-
-
-::: {.callout-note}
-## Note
-Prior work shows that single scale surveys correlate with true metrics
-at roughly $r = 0.5$, while multi-item scales reach about $r = 0.8$. Neither
-is perfect!
-:::
-
-#### Other Examples of Measurement Error
+#### Other Examples of Classical ME
 - Blood pressure recorded at a single clinic visit
 - Self-reported hours worked
 - Human error when reading time from a clock
@@ -133,16 +235,16 @@ is perfect!
 
 ---
 
-## 3. Causal Estimand, Identification & Attenuation Bias
+## 2. Causal Estimand, Identification & Attenuation Bias
 
-### 3.1 Causal Setup & Identification
+### 2.1 Setup
 
 Throughout the tutorial, we are interested in measuring the average treatment
 effect (ATE) of $D$ on $Y$. Most of our results assume a linear regression
 model. Below, we explain how measurement error in treatment, conditioning, and
 outcome variables can influence findings.
 
-### 3.2 Classical ME in Treatment: Attenuation Bias
+### 2.2 Classical ME in Treatment: Attenuation Bias
 We want to determine $\beta$ in $Y = \beta D + \varepsilon$, but we
 observe only $D^* = D + U$. Plugging the proxy
 into OLS gives:
@@ -287,7 +389,7 @@ fig_att.update_layout(
 show(fig_att)
 ```
 
-### 3.3 ME in Outcome Variables
+### 2.3 ME in Outcome Variables
 We *still* want to determine $\beta$ in $Y = \beta D + \varepsilon$. This time, we
 observe a noisy outcome $Y^* = Y + U$. Plugging the proxy
 into OLS gives:
@@ -301,83 +403,80 @@ $\sigma^2_\varepsilon$ to $\sigma^2_\varepsilon + \sigma^2_U$, which inflates
 standard errors and reduces $R^2$.
 
 ### Exercise: Outcome measurement error
-The following exersize shows how analysis with a noisy measure of $Y$ compares
-to analysis with the ground truth measure. 
+The following exercise shows how analysis with a noisy measure of $Y$ compares
+to analysis with the ground truth measure.
 
-The `NHANES` dataset records average systolic blood pressure ($Y$, in mmHg) and
-age ($D$, in years) for 8,551 adults. `BPSysAve` is the mean of three readings
-taken in the same visit. For the following exercise, we assume these values are the ground truth blood
-pressure and  simulate a noisy measure: 
+The `gpa1` dataset (Wooldridge) records self-reported college GPA ($Y$) and
+weekly study hours ($D$) for 141 undergraduates. Self-reported GPA is subject
+to small rounding and recall errors. We treat the recorded GPA as ground truth
+and simulate a noisy proxy:
 
-
-$$\text{BP}^*_i = \text{BP}_i + U_i, \quad U_i \sim \mathcal{N}(0,\,15^2)$$
+$$\text{GPA}^*_i = \text{GPA}_i + U_i, \quad U_i \sim \mathcal{N}(0,\,0.3^2)$$
 
 <details>
 <summary>Load the data in R</summary>
 
 ```r
-library(NHANES)
-d <- na.omit(NHANES[, c("BPSysAve", "Age")])
+library(wooldridge)
+d <- na.omit(gpa1[, c("colGPA", "study")])
 set.seed(5)
-d$BP_noisy <- d$BPSysAve + rnorm(nrow(d), mean = 0, sd = 15)
+d$gpa_noisy <- d$colGPA + rnorm(nrow(d), mean = 0, sd = 0.3)
 ```
 
 </details>
-**Question 1.** Compute the measurement error $U = Y^* - Y$ (`BP_noisy` minus
-`BPSysAve`). What is the mean and standard deviation?
+
+**Question 1.** Compute the measurement error $U = Y^* - Y$ (`gpa_noisy` minus
+`colGPA`). What is the mean and standard deviation?
 
 ```r
-err <- d$BP_noisy - d$BPSysAve
+err <- d$gpa_noisy - d$colGPA
 mean(err)
 sd(err)
 ```
 
-**Question 2.** Check the correlation between the original `BPSysAve` and
-`BP_noisy`.
+**Question 2.** Check the correlation between `colGPA` and `gpa_noisy`.
 
 ```r
-cor(d$BPSysAve, d$BP_noisy)
+cor(d$colGPA, d$gpa_noisy)
 ```
 
-**Question 3.** Regress systolic blood pressure on age using the original
-`BPSysAve` and then using `BP_noisy`. Compare the slope coefficients, standard
-errors, and $R^2$ across the two models. 
+**Question 3.** Regress GPA on study hours using `colGPA` and then using
+`gpa_noisy`. Compare the slope coefficients, standard errors, and $R^2$.
 
 ```r
-summary(lm(BPSysAve ~ Age, data = d))
-summary(lm(BP_noisy ~ Age, data = d))
+summary(lm(colGPA    ~ study, data = d))
+summary(lm(gpa_noisy ~ study, data = d))
 ```
 
 ::: {.callout-tip icon=false collapse=true}
 ## Solution
 
 ```r
-library(NHANES)
-d <- na.omit(NHANES[, c("BPSysAve", "Age")])
+library(wooldridge)
+d <- na.omit(gpa1[, c("colGPA", "study")])
 set.seed(5)
-d$BP_noisy <- d$BPSysAve + rnorm(nrow(d), mean = 0, sd = 15)
+d$gpa_noisy <- d$colGPA + rnorm(nrow(d), mean = 0, sd = 0.3)
 
 # error stats
-err <- d$BP_noisy - d$BPSysAve
-mean(err)   # ≈ 0.0  
-sd(err)     # ≈ 15.1
+err <- d$gpa_noisy - d$colGPA
+mean(err)   # ≈ 0.0
+sd(err)     # ≈ 0.1
 
 # correlation
-cor(d$BPSysAve, d$BP_noisy)   # ≈ 0.752
+cor(d$colGPA, d$gpa_noisy)   # ≈ 0.80
 
 # regression
-summary(lm(BPSysAve ~ Age, data = d))
-# slope = 0.439,  SE = 0.0079,  R² = 0.264
+summary(lm(colGPA    ~ study, data = d))
+# slope ≈ 0.046,  SE ≈ 0.029,  R² ≈ 0.017
 
-summary(lm(BP_noisy ~ Age, data = d))
-# slope = 0.440,  SE = 0.0113,  R² = 0.151
+summary(lm(gpa_noisy ~ study, data = d))
+# slope ≈ 0.046,  SE ≈ 0.036,  R² ≈ 0.011
 ```
 :::
 
-The two slopes are nearly identical (0.439 vs 0.440). The difference is due to
-sampling noise. The standard error grows from 0.0079 to 0.0113 (+43%) and $R^2$
-falls from 0.264 to 0.151. A noisier outcome variable means you need a larger
-sample to detect the same true effect.
+The two slopes are identical because ME in the outcome does not
+introduce bias. The standard error increases and $R^2$ falls. A noisier outcome means you
+need a larger sample to achieve the same statistical precision.
 
 ### Simulation
 
@@ -452,7 +551,7 @@ show(fig_ome)
 
 ---
 
-## 3.4 Measurement Error in Conditioning Variables
+## 2.4 Measurement Error in Conditioning Variables
 We *still* want to determine the ATE of $D$ on $Y$. This time, we assume there
 is some confounding variable $Z$. Unfortunately, We only observe a noisy $Z^* =
 Z + U$ where $U_Z$ is classical ME (mean zero, independent of $D$, $Y$, and $Z$).
@@ -491,7 +590,7 @@ digraph {
 ```
 
 
-### 3.4.1 Bias in Multivariate OLS
+### 2.4.1 Bias in Multivariate OLS
 What can we know about the direction of the bias and the relationship to
 $\beta_Z$? Let's explore how classical ME in a *single variable* affects
 coefficients in a multivariate OLS. First, we will show that $\beta_{Z^*}$ is
@@ -525,11 +624,6 @@ $$\hat\beta_{D} = \beta_D + (\beta_Z - \beta_{Z^*}) \delta = \beta_D + (1 - \lam
 
 ::: {.callout-note}
 ## Exercise
-
-Recall that classical measurement error in a multivariate regression biases
-both the mismeasured coefficient and the treatment coefficient. Specifically:
-
-$$\hat\beta_{D} = \beta_D + (1 - \lambda_1)\,\beta_Z\,\delta$$
 
 1. What are the two components in the bias term $(1 - \lambda_1)\beta_Z\delta$?
 
@@ -759,7 +853,7 @@ show(fig_c)
 
 ---
 
-## 5. Instrumental Variables (IV) & 2SLS
+## 3. Instrumental Variables (IV) & 2SLS
 Below, we will show how using instrumental
 variables can recover unbiased estimates when there is (i) classical ME in the
 treatment variable and (ii) classical ME in a confounding variable. 
@@ -770,7 +864,7 @@ $T$ for the true $D$. The IV must satisfy three assumptions:
 
 1. **Exclusion**: $\text{Cov}(T, \varepsilon) = 0$ ($T$ affects $Y$ only
    through $D$)
-2. **Exogeneity**: $U_D \perp T$ (measurement error in $D^*$ is independent of
+2. **Exogeneity**: $U \perp T$ (measurement error in $D^*$ is independent of
 the instrument $T$)
 3. **Relevance**: $\text{Cov}(T, D^*) \neq 0$ ($T$ is correlated with
    the mismeasured treatment)
@@ -781,7 +875,7 @@ Remember that we want to determine $\beta$ in $Y =
 $$\text{Cov}(Y, T) = \text{Cov}(\beta D + \varepsilon, T) = \beta \text{Cov}(D,
 T) $$
 
-$$\text{Cov}(D^*, T) = \text{Cov}(D + U_D, T) =\text{Cov}(D,
+$$\text{Cov}(D^*, T) = \text{Cov}(D + U, T) =\text{Cov}(D,
 T) $$
 
 so $\hat{\beta} = \text{Cov}(Y, T) / \text{Cov}(D^*, T)$. 
@@ -789,7 +883,7 @@ so $\hat{\beta} = \text{Cov}(Y, T) / \text{Cov}(D^*, T)$.
 In the first derivation, we leverage the exclusion assumption; in the second,
 we leverage the exogeneity assumption. 
 
-### Two-Stage Least Sqaures
+### Two-Stage Least Squares
 In practice,
 we can implement the estimator as a two-stage OLS (2SLS):
 
@@ -801,7 +895,9 @@ $$\hat D^* = \hat\pi_0 + \hat\pi_1 T$$
 
 $$Y = \alpha + \beta\,\hat D^* + \eta$$
 
-### Exercise: BMI and Blood Pressure Below, you'll use 2SLS to see how
+### Exercise: BMI and Blood Pressure
+
+Below, you'll use 2SLS to see how
 instrumental variables can recover $\beta_D$. We will compare
 the results from a 2SLS regression to a regression with the ground truth
 treatment. 
@@ -951,32 +1047,197 @@ We need to know $\beta_3^2\,\text{Var}(Z)$. We don't observe this quantity
 because $Z$ is unobserved. 
 :::
 
----
+## 4. Methods for Latent Variables
+Sometimes the outcome refers to constructs that are not measured directly but
+can be quantified using observed attributes or indicators. In this section, we will
+show how researchers operationalize constructs of interest using
+multiple observed indicators (e.g., questions in a test or a survey).
 
-## 6. Latent Variable Methods: SEM, Scoring & IRT
+During implementation, researchers must make several decisions
+based on substantive domain knowledge: (i) selecting the best indicators to
+model the latent variable of interest, and (ii) summarizing the information from
+those indicators. In applied research, researchers often rely on a composite score
+that quantifies the degree to which a construct is manifested for each unit of
+observation (e.g., sum scores, predicted scores, or imputed scores). Causal
+inferences can be more or less biased depending not only on the chosen scoring
+method but also on other research conditions, such as the number of indicators
+and the magnitude of their measurement error.
 
 
----
+The latent variable approach assumes that the
+indicators share a common cause, allowing us to use the
+common variance to model an underlying unobserved variable by specifying
+a measurement model. This measurement model represents how observed
+variables are linked to a latent variable. Additionally, structural
+models can represent how observed variables (outside the
+measurement model) and latent variables connect to one another. This
+framework empirically contrasts substantive knowledge with data using
+structural equation modeling (SEM; Bollen, 1989), in which multiple
+equations are estimated simultaneously.
 
-## 7. Measurement Invariance
+Below, we present a simplified example of incorporating a
+measurement model specification within the SEM approach.
 
----
+### Case 1: Observed Treatment to Latent Continuous Outcome
 
-## 8. Takeaways
+In this baseline scenario, the treatment condition $X \in \{0, 1\}$ is
+perfectly measured and assigned, but the outcome is a latent construct
+$\eta_Y$ measured by a set of continuous indicators.
 
-- Measurement error is not a nuisance to note in a limitations section; it is a
-  structural feature of the data-generating process with identifiable causal
-  consequences.
-- Classical error in the *treatment* attenuates coefficients toward zero by the
-  reliability ratio $\lambda$. Classical error in the *outcome* inflates standard
-  errors but leaves point estimates unbiased.
-- Error in a *conditioning variable* leaves an open backdoor path and can bias
-  estimates in either direction.
-- Instrumental variables and SEM each offer consistent estimation under different
-  assumptions. The choice depends on whether a valid second proxy or a full
-  measurement model is available.
-- Before worrying about confounding or external validity, ask whether the measures
-  themselves are valid proxies for the constructs of interest.
+By modeling the outcome as latent, the causal estimand (ATE) is evaluated on the
+true latent scale. This avoids the attenuation bias inherent in traditional
+two-step scoring strategies (such as using sum scores or extracted factor scores
+as an observed outcome in a standard regression).
+
+#### 1. Measurement Model Specification
+
+For an individual $i$ and item $j$, the measurement model is:
+
+$$y_{ij} = \nu_j + \lambda_j \eta_{Yi} + \epsilon_{ij}$$
+
+Where the item residual is
+$\epsilon_{ij} \sim \mathcal{N}(0, \theta_j)$. 
+
+To identify the model and
+set the metric of $\eta_Y$, we can either (i) standardize the latent
+variable prior to estimating the structural paths
+($\eta_{Yi} \sim \mathcal{N}(0, \psi)$) or (ii) fix a reference factor
+loading (e.g., $\lambda_1 = 1$).
+
+#### 2. Structural Model Specification
+
+The structural parameterization directly regresses the latent variable
+on the observed binary treatment:
+
+$$\eta_{Yi} = \alpha_Y + \tau X_i + \zeta_i$$
+
+Where $\zeta_i \sim \mathcal{N}(0, \psi_{residual})$, and $\tau$
+represents the ATE on the latent scale.
+
+------------------------------------------------------------------------
+
+### Case 2: Latent Treatment Assignment
+
+This second scenario maps onto selection mechanisms where an underlying latent
+propensity, $\eta_X$, determines the true treatment assignment. This continuous
+propensity is discretized into an observed binary treatment $X$, which
+subsequently causes the observed continuous outcome $Y$.
+
+#### 1. Latent Propensity Measurement Model
+
+The continuous latent condition is measured by a set of indicators $k$:
+
+$$\boldsymbol{x}_{ik} = \boldsymbol{\nu}_{Xk} + \boldsymbol{\lambda}_{Xk} \eta_{Xi} + \boldsymbol{\delta}_{ik}$$
+
+Where $\eta_{Xi} \sim \mathcal{N}(0, 1)$ represents the underlying
+continuous condition. For example, when strict experimental conditions
+are difficult to meet, we might use a set of questions to determine
+whether participants are adhering to a specific treatment (e.g., dietary
+restrictions). We need sufficient information to classify them into the
+categorical conditions of interest. To do so, a threshold must be
+established.
+
+#### 2. Discretization and Treatment Assignment Mechanism
+
+The latent condition dictates treatment assignment via an indicator
+function using a fixed threshold $c$:
+
+$$X_i = I(\eta_{Xi} > c)$$
+
+*(Note:* $X_i = 1$ if the condition is met, and $X_i = 0$ otherwise).
+
+#### 3. Observed Outcome Model
+
+The final structural model evaluates the effect of the assigned
+treatment on the observed continuous outcome:
+
+$$Y_i = \alpha_Y + \tau X_i + \epsilon_i$$
+
+Where $\epsilon_i \sim \mathcal{N}(0, \sigma^2_Y)$.
+
+------------------------------------------------------------------------
+
+## 5. Measurement Invariance
+
+Concerns may arise regarding whether scores (i.e., measures) derived from the
+latent variable framework are comparable across different groups. For example,
+we must assess whether the observed responses are caused by the same latent
+variable across groups, and whether that latent variable causes variation of the
+same magnitude for all indicators.
+
+When utilizing a measurement model, we must ensure it meets specific
+invariance requirements. Essentially, this guarantees that the
+measurement properties do not vary because of group-related
+characteristics. Measurement invariance operates on a progressive
+spectrum, meaning a measure can demonstrate anything from weak to strict
+invariance depending on the parameters being constrained. Crucially,
+these levels are nested; if a lower level of invariance is not met, a
+higher level cannot be achieved. Below is a brief description of these
+levels, building from the lowest requirement:
+
+### Configural Invariance
+
+This stage is designed to test if the model has the same basic form
+across groups, implying that the pattern of relationships between the
+indicators and the latent variable is equivalent. Achieving this level
+means the conceptual structure is reflected similarly across groups.
+
+### Metric Invariance
+
+Once there is evidence that the model form is the same, the next step is
+to check for equivalence in the magnitude to which the indicators relate
+to the latent variable. This is tested by constraining the factor
+loadings to be equal across groups.
+
+### Scalar Invariance
+
+This level of invariance implies that mean differences in the latent
+construct capture all mean differences in the shared variance of the
+indicators. For example, if we have an item asking about the frequency
+of a specific behavior, a scalar-invariant measure ensures that
+individuals from different groups with the exact same level of the
+latent trait will endorse the item with the same average frequency. A
+non-invariant measure would mean that for some groups, the average
+observed frequency is higher or lower without a corresponding true
+difference in the underlying latent variable.
+
+
+### Residual Invariance
+
+The final step to establish measurement invariance is to test if the
+item residuals are equivalent. In other words, we constrain the specific
+variance and measurement error to be equal across groups. Although this
+level demonstrates strict invariance, it is not strictly required to
+compare latent means, since the residuals are distinct from the latent
+factor.
+
+*(Note: An alternative approach to establishing a measurement model
+falls under Item Response Theory (IRT), in which a probability function
+formalizes the relationship between a categorical observed response and
+a continuous underlying latent variable. The invariance property can
+also be tested within this framework, where a lack of invariance is more
+commonly referred to as Differential Item Functioning, or DIF.)*
+
+------------------------------------------------------------------------
+
+## 6. Takeaways
+
+- Before reasoning about confounding and generalizability, researchers often
+assume they measured experimental variables accurately.
+
+- This assumption is not always reasonable, especially when measuring abstract
+constructs or using instruments subject to human error.
+
+- Ignoring measurement error can bias outcomes even when there is no confounding
+present in the DAG
+
+- Well designed experiments (e.g., carefully selected instrumental variables)
+can help detect unbiased effects when researchers suspect measurement error.
+
+
+- We can use proxy variables as latent variables if we can model a valid relationship
+between the proxy and latent variable
+
 
 ---
 
