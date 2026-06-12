@@ -11,7 +11,7 @@ format:
     theme: cosmo
     code-fold: true
     code-tools: false
-    self-contained: true
+    self-contained: false
     html-math-method: mathjax
 execute:
   echo: false
@@ -1154,6 +1154,14 @@ treatment on the observed continuous outcome:
 $$Y_i = \alpha_Y + \tau X_i + \epsilon_i$$
 
 Where $\epsilon_i \sim \mathcal{N}(0, \sigma^2_Y)$.
+
+<iframe src="https://londonmae.shinyapps.io/measurement-err/"
+        width="100%"
+        height="650px"
+        frameborder="0"
+        allow="fullscreen"
+        loading="eager">
+</iframe>
 
 ------------------------------------------------------------------------
 

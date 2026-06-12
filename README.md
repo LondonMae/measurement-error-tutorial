@@ -2,7 +2,10 @@
 
 An interactive tutorial on classical measurement error in causal inference,
 covering attenuation bias, ME in conditioning variables, and IV/2SLS correction.
-View the tutorial at https://londonmae.github.io/measurement-error-tutorial/. 
+
+View the tutorial locally by launching index.html in the _site directory, or follow the instructions below to run it yourself.
+View the published tutorial at https://londonmae.github.io/measurement-error-tutorial/.
+View the source code at https://github.com/LondonMae/measurement-error-tutorial. 
 
 ## Running locally (for development)
 
